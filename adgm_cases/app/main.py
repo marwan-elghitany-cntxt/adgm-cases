@@ -1,63 +1,30 @@
 import asyncio
 import os
-import textwrap
-from typing import Dict, List
 import uuid
-import openai
-from fpdf import FPDF
-from io import BytesIO
+from pathlib import Path
+from typing import Dict, List
 
 import streamlit as st
-from constants import CLAIM_FORM_PATH, EMPLOYMENT_FORM_PATH, TEMP_DIR
-from image_transcriber import ImageTranscriber
+from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
+from agents import Officer, ReConstructor
+from constants import CLAIM_FORM_PATH, EMPLOYMENT_FORM_PATH, TEMP_DIR
 from document_processor import DocumentProcessor
+from image_transcriber import ImageTranscriber
+from templates.prompt_templates import (
+    LLM_PROMPT_CHECKER,
+    LLM_PROMPT_OFFICER,
+    LLM_PROMPT_RECONSTRUCTOR,
+)
 from utils.helpers import (
+    aed_to_usd,
     find_missing_keys,
     inject_flattened_values,
     json_to_markdown,
     read_json_file,
     txt2md_converter,
 )
-from agents import Officer, ReConstructor
-from templates.prompt_templates import (
-    LLM_PROMPT_CHECKER,
-    LLM_PROMPT_CLASSIFIER,
-    LLM_PROMPT_COMBINER,
-    LLM_PROMPT_CONFLICT,
-    LLM_PROMPT_DESCRIPER,
-    LLM_PROMPT_EXTRACTOR,
-    LLM_PROMPT_MISSING_DETECTOR,
-    LLM_PROMPT_OFFICER,
-    LLM_PROMPT_RECONSTRUCTOR,
-    LLM_PROMPT_REVISOR,
-    LLM_PROMPT_UNMENTIONED_DETECTOR,
-)
-from pathlib import Path
-import asyncio
-import os
-import uuid
-from typing import Dict, List
-from pathlib import Path
-
-import streamlit as st
-from langchain_openai import ChatOpenAI
-
-from image_transcriber import ImageTranscriber
-from document_processor import DocumentProcessor
-from agents import Officer, ReConstructor
-from templates.prompt_templates import (
-    LLM_PROMPT_CLASSIFIER,
-    LLM_PROMPT_COMBINER,
-    LLM_PROMPT_DESCRIPER,
-    LLM_PROMPT_EXTRACTOR,
-    LLM_PROMPT_OFFICER,
-    LLM_PROMPT_RECONSTRUCTOR,
-    LLM_PROMPT_REVISOR,
-)
 from utils.utils import PDF2MD
-
-from dotenv import load_dotenv
 
 load_dotenv()
 
@@ -69,7 +36,9 @@ llm = ChatOpenAI(
     stream_usage=True,
 )
 
-reconstructor = ReConstructor(llm=llm, actions=[], prompt=LLM_PROMPT_RECONSTRUCTOR)
+reconstructor = ReConstructor(
+    llm=llm, actions=[aed_to_usd], prompt=LLM_PROMPT_RECONSTRUCTOR
+)
 officer = Officer(llm=llm, actions=[], prompt=LLM_PROMPT_OFFICER)
 checker = Officer(llm=llm, actions=[], prompt=LLM_PROMPT_CHECKER)
 
@@ -146,15 +115,6 @@ async def analyze_documents(files, claims_text: str):
 
     os.makedirs(st.session_state.session_id, exist_ok=True)
 
-    # # new_files = [
-    # #     file
-    # #     for file in files
-    # #     if file.name not in [doc["filename"] for doc in st.session_state.documents]
-    # # ]
-
-    # if not new_files:
-    #     return None, None
-
     file_paths = []
     for file in files:
         file_path = PDF2MD.save_uploaded_file(st.session_state.session_id, file)
@@ -171,28 +131,22 @@ async def analyze_documents(files, claims_text: str):
 
     st.session_state.summary = f"Uploaded {len(files)} new document(s). Processing .."
 
-    processor = DocumentProcessor(
-        llm=llm,
-        describer_actions=[],
-        extractor_actions=[],
-        describer_prompt=LLM_PROMPT_DESCRIPER,
-        extractor_prompt=LLM_PROMPT_EXTRACTOR,
-        classifier_prompt=LLM_PROMPT_CLASSIFIER,
-        combiner_prompt=LLM_PROMPT_COMBINER,
-        revisor_prompt=LLM_PROMPT_REVISOR,
-        missing_docs_prompt=LLM_PROMPT_MISSING_DETECTOR,
-        poclaims_conflicts_prompt=LLM_PROMPT_CONFLICT,
-        not_refrenced_docs_prompt=LLM_PROMPT_UNMENTIONED_DETECTOR,
-        json_structure=JSON_SCHEMA,
+    processor = DocumentProcessor(llm=llm, json_structure=JSON_SCHEMA)
+
+    results, missing_pts, conflict_pts, incorrect_claim = (
+        await processor.process_documents(file_paths)
     )
-
-    results, missing_pts, cfl_pts = await processor.process_documents(file_paths)
     missing_keys = find_missing_keys(schema=JSON_SCHEMA, data=results)
+    if incorrect_claim:
+        # Adding claim_value ❌ to missing keys to enable updating it
+        print("adding claim_value ❌ to missing keys to enable updating it ")
+        missing_keys += ["claim_details.claim_value"]
 
+    print(f"missing keys: 2 {missing_keys}")
     st.session_state.summary = json_to_markdown(results)
     st.session_state.summary_json = results
 
-    return results, missing_keys, missing_pts, cfl_pts
+    return results, missing_keys, missing_pts, conflict_pts
 
 
 async def ask_llm(messages: List[Dict], is_checker=False):
@@ -226,17 +180,23 @@ with col1:
         if uploaded_files and particular_of_claims.strip():
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-            results, missing_keys, missing_pts, cfl_pts = loop.run_until_complete(
+            results, missing_keys, missing_pts, conflict_pts = loop.run_until_complete(
                 analyze_documents(uploaded_files, particular_of_claims)
             )
 
             if missing_keys:
                 st.session_state.chat_history.extend(
                     [
-                        {"role": "system", "content": f"Missing Keys: {missing_keys}"},
-                        {"role": "system", "content": f"Conflicts found: {cfl_pts}"},
                         {
-                            "role": "system",
+                            "role": "assistant",
+                            "content": f"Missing Keys: {missing_keys}",
+                        },
+                        {
+                            "role": "assistant",
+                            "content": f"Conflicts found: {conflict_pts}",
+                        },
+                        {
+                            "role": "assistant",
                             "content": f"Missing documents to be uploaded: {missing_pts}",
                         },
                         # {"role": "system", "content": f"Documents already Uploaded but user didn't reference through the his summary: {nrf_pts}"},
@@ -258,9 +218,9 @@ with col1:
 
         with input_col:
             user_input = st.text_input(
-                label="",
+                label="🗨️ Your Message",
                 placeholder="Write your input...",
-                key="user_input"
+                key="user_input",
             )
 
         with button_col:
@@ -268,13 +228,12 @@ with col1:
             chat_submitted = st.form_submit_button(label="➤")
             st.markdown("</div>", unsafe_allow_html=True)
 
-
     if user_input and chat_submitted:
         st.session_state.chat_history.append({"role": "user", "content": user_input})
-        # No need for more keys
+        # All Keys are set
         if not st.session_state["missing_keys"]:
             st.session_state.chat_history.append(
-                {"role": "system", "content": f"No Missing Keys Found!"}
+                {"role": "assistant", "content": f"No Missing Keys Found!"}
             )
             # Chat normally
             llm_reply = asyncio.run(ask_llm(st.session_state.chat_history))
@@ -283,34 +242,48 @@ with col1:
             filled_dict = asyncio.run(
                 reconstructor.reconstruct(user_input, st.session_state["missing_keys"])
             )
-            results = inject_flattened_values(
-                filled_dict, st.session_state.summary_json
-            )
-            st.session_state.summary_json = results
-            st.session_state.summary = json_to_markdown(results)
+            print("RECONSTRUCTOR OUTPUT:")
+            print("=====")
+            print(filled_dict)
+            print("=====")
+            if isinstance(filled_dict, dict):
+                results = inject_flattened_values(
+                    filled_dict, st.session_state.summary_json
+                )
+                # results = safely_fix_claim_value(results)
+                st.session_state.summary_json = results
+                st.session_state.summary = json_to_markdown(results)
 
-            missing_keys = find_missing_keys(schema=JSON_SCHEMA, data=results)
-            st.session_state["missing_keys"] = missing_keys
-            # Still exist Missing Keys after the user input, add to history and generate reply
-            if missing_keys:
+                missing_keys = find_missing_keys(schema=JSON_SCHEMA, data=results)
+                st.session_state["missing_keys"] = missing_keys
+                # Still exist Missing Keys after the user input, add to history and generate reply
+                if missing_keys:
+                    st.session_state.chat_history.append(
+                        {
+                            "role": "assistant",
+                            "content": f"Updated Missing Keys: {missing_keys}",
+                        }
+                    )
+                    llm_reply = asyncio.run(ask_llm(st.session_state.chat_history))
+                    st.session_state.chat_history.append(
+                        {"role": "ai", "content": llm_reply}
+                    )
+                # Or else update the model that no other missing keys needed
+                else:
+                    st.session_state.chat_history.append(
+                        {
+                            "role": "assistant",
+                            "content": f"No Other Missing Keys Found!",
+                        }
+                    )
+                    llm_reply = asyncio.run(ask_llm(st.session_state.chat_history))
+                    st.session_state.chat_history.append(
+                        {"role": "ai", "content": llm_reply}
+                    )
+            # Handling JSON exception for Reconstructor
+            elif isinstance(filled_dict, str):
                 st.session_state.chat_history.append(
-                    {
-                        "role": "system",
-                        "content": f"Updated Missing Keys: {missing_keys}",
-                    }
-                )
-                llm_reply = asyncio.run(ask_llm(st.session_state.chat_history))
-                st.session_state.chat_history.append(
-                    {"role": "ai", "content": llm_reply}
-                )
-            # Or else update the model that no other missing keys needed
-            else:
-                st.session_state.chat_history.append(
-                    {"role": "system", "content": f"No Other Missing Keys Found!"}
-                )
-                llm_reply = asyncio.run(ask_llm(st.session_state.chat_history))
-                st.session_state.chat_history.append(
-                    {"role": "ai", "content": llm_reply}
+                    {"role": "assistant", "content": filled_dict}
                 )
 
     if st.session_state.chat_history:

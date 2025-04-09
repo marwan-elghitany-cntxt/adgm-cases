@@ -1,7 +1,9 @@
 import asyncio
 from typing import Dict, List
 from langchain_core.output_parsers import JsonOutputParser
+from tools.tools_helpers import check_claim_correct, multiply_values, sum_values
 from agents import (
+    ClaimantEvaluator,
     DocumentClassifier,
     DocumentDescriber,
     Generator,
@@ -12,12 +14,23 @@ from agents import (
 from utils.helpers import (
     convert_documents_ids_to_markdown,
     convert_to_markdown,
+    fetch_claim_value,
     find_missing_keys,
-    fix_claim_value,
     gen_file_id,
     inject_flattened_values,
     read_pdf_text,
     safely_fix_claim_value,
+)
+from templates.prompt_templates import (
+    LLM_PROMPT_CLAIM_EVAL,
+    LLM_PROMPT_CLASSIFIER,
+    LLM_PROMPT_COMBINER,
+    LLM_PROMPT_CONFLICT,
+    LLM_PROMPT_DESCRIPER,
+    LLM_PROMPT_EXTRACTOR,
+    LLM_PROMPT_MISSING_DETECTOR,
+    LLM_PROMPT_REVISOR,
+    LLM_PROMPT_UNMENTIONED_DETECTOR,
 )
 
 
@@ -25,17 +38,16 @@ class DocumentProcessor:
     def __init__(
         self,
         llm,
-        describer_prompt,
-        extractor_prompt,
-        classifier_prompt,
-        combiner_prompt,
-        revisor_prompt,
-        missing_docs_prompt,
-        not_refrenced_docs_prompt,
-        poclaims_conflicts_prompt,
-        describer_actions,
-        extractor_actions,
         json_structure,
+        describer_prompt=LLM_PROMPT_DESCRIPER,
+        extractor_prompt=LLM_PROMPT_EXTRACTOR,
+        classifier_prompt=LLM_PROMPT_CLASSIFIER,
+        combiner_prompt=LLM_PROMPT_COMBINER,
+        revisor_prompt=LLM_PROMPT_REVISOR,
+        missing_docs_prompt=LLM_PROMPT_MISSING_DETECTOR,
+        poclaims_conflicts_prompt=LLM_PROMPT_CONFLICT,
+        not_refrenced_docs_prompt=LLM_PROMPT_UNMENTIONED_DETECTOR,
+        claim_eval_prompt=LLM_PROMPT_CLAIM_EVAL,
     ):
         self.llm = llm
 
@@ -47,9 +59,8 @@ class DocumentProcessor:
         self.missing_docs_prompt = missing_docs_prompt
         self.not_refrenced_docs_prompt = not_refrenced_docs_prompt
         self.poclaims_conflicts_prompt = poclaims_conflicts_prompt
+        self.claim_eval_prompt = claim_eval_prompt
 
-        self.describer_actions = describer_actions
-        self.extractor_actions = extractor_actions
         self.json_structure = json_structure
 
     async def _read_document(self, file_path: str) -> dict:
@@ -75,7 +86,7 @@ class DocumentProcessor:
 
         describer = DocumentDescriber(
             llm=self.llm,
-            actions=self.describer_actions,
+            actions=[],
             prompt=self.describer_prompt,
         )
         description = await describer.describe(document_data["document"])
@@ -106,7 +117,7 @@ class DocumentProcessor:
     ) -> dict:
         extractor = JSONExtractor(
             llm=self.llm,
-            actions=self.extractor_actions,
+            actions=[],
             prompt=self.extractor_prompt,
             json_structure=self.json_structure,
         )
@@ -115,7 +126,7 @@ class DocumentProcessor:
         doc_description = description_data.get("description")
         doc_classification = next(
             (
-                f"{entry['label']}** Since: {entry['reason']}"
+                f"{entry['label']}`: {entry['reason']}"
                 for entry in classification_data
                 if entry["document_id"] == file_id
             ),
@@ -148,7 +159,7 @@ class DocumentProcessor:
         Runs all document-related detectors concurrently and returns their results.
 
         Returns:
-            (missing_pts, conflict_pts)
+            (missing_docs_points, conflict_pts)
         """
         # Map classification data by document_id
         classification_map = {
@@ -199,6 +210,21 @@ class DocumentProcessor:
 
         return tuple(results)
 
+    async def evaluate_claim_value(self, results: dict, user_input: str):
+
+        claim_value = fetch_claim_value(results=results)
+        if claim_value is not None:
+
+            evaluator = ClaimantEvaluator(
+                llm=self.llm,
+                actions=[sum_values, multiply_values, check_claim_correct],
+                prompt=self.claim_eval_prompt,
+            )
+            return await evaluator.evaluate(
+                claim_value=claim_value, user_details=user_input
+            )
+        return None
+
     async def process_documents(self, file_paths: list[str]) -> list[dict]:
         user_claim_desc = ""
         # # Step 1: Read all documents
@@ -216,6 +242,10 @@ class DocumentProcessor:
                 user_claim_desc = description["description"]
                 del description_results[i]
 
+        print("user_claim_des")
+        print(f"{user_claim_desc}")
+        print("user_claim_des")
+
         # Step 3: Classify documents
         print("Classification started ... ")
         classification_result = await self._classify_document(
@@ -230,13 +260,13 @@ class DocumentProcessor:
             description_results=description_results,
             classification_result=classification_result,
         )
-        missing_pts, cfl_pts = results
+        missing_docs_points, conflict_points = results
 
         print("")
-        print(f"{missing_pts=}")
+        print(f"{missing_docs_points=}")
         print("")
         print("")
-        print(f"{cfl_pts=}")
+        print(f"{conflict_points=}")
         print("")
 
         print("JSON Generation started ... ")
@@ -252,13 +282,17 @@ class DocumentProcessor:
         ]
         final_results = await asyncio.gather(*extract_tasks)
 
+        print("final_results")
+        print(f"{final_results}")
+        print("final_results")
+
         print("MD started ... ")
         # Step 5: Convert to markdown
         md_results = convert_to_markdown(final_results)
 
-        print("<<md_results>>")
-        print(md_results)
-        print("<<md_results>>")
+        print("md_resultsmd_resultsmd_resultsmd_results")
+        print(f"{md_results=}")
+        print("md_resultsmd_resultsmd_resultsmd_results")
 
         print("Combination started ... ")
         # Step 6: Combine results
@@ -280,8 +314,6 @@ class DocumentProcessor:
             schema=self.json_structure, data=combined_results
         )
 
-        print(f"{missing_keys=}")
-
         print("MD 2 started ... ")
         md_results_wojson = convert_to_markdown(final_results, include_json=False)
 
@@ -292,11 +324,29 @@ class DocumentProcessor:
             document=md_results_wojson, missing_keys=str(missing_keys)
         )
         print("Injection started ... ")
-        print(f"{filled_dict=}")
-        print("ON ... ")
         print(f"{combined_results=}")
         revised_results = inject_flattened_values(filled_dict, combined_results)
-        
-        revised_results = safely_fix_claim_value(revised_results)
+        incorrect_claim = False
 
-        return revised_results, missing_pts, cfl_pts
+        print("claim_value_evaluation ... ")
+        claim_value_evaluation = await self.evaluate_claim_value(
+            results=revised_results, user_input=user_claim_desc
+        )
+        print(f"{claim_value_evaluation=}")
+        if claim_value_evaluation is not None:
+
+            if "<conflict>" in claim_value_evaluation:
+                incorrect_claim = True
+                if conflict_points == "<empty></empty>":
+                    conflict_points = f"{claim_value_evaluation}"
+                else:
+                    conflict_points = f"{claim_value_evaluation}\n" + conflict_points
+            print("")
+            print("conflict_points updated")
+            print("")
+            print(conflict_points)
+            print("")
+
+        revised_results = safely_fix_claim_value(revised_results, incorrect_claim)
+
+        return revised_results, missing_docs_points, conflict_points, incorrect_claim

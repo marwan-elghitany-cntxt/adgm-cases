@@ -28,6 +28,25 @@ Identify and itemize any financial amounts or contract-related details, specifyi
 - Interest Rate %
 
 ---
+### **Claim Value Breakdown:** (if exists)  
+If the document contains a claim for financial compensation or reimbursement, this section should itemize and clearly present each contributing element that forms the total claimed amount. Use a structured format that allows quick verification and legal clarity.
+
+For each line item, include the following:
+
+- **Component:** What the amount is for (e.g., unpaid salary, end-of-service, vacation days, bonuses).
+- **Rate/Unit:** If applicable, mention the per-month or per-day rate used.
+- **Duration/Quantity:** Specify the number of months, days, or units.
+- **Amount (Currency):** Show the computed value of the component.
+
+
+Display the full breakdown in bullet list, for example:
+
+- **Unpaid Salary**: 33,000 AED  
+- **End-of-Service Gratuity**: 11,000 AED × 3 month = 33,000 AED  
+- **Total Claim Value**: **66,000 AED**
+
+**Note:** This section is critical for validating whether the total claim value is correctly derived from its components. Ensure consistency in currency, math logic, and legal relevance.
+---
 
 ### **Purpose and Legal Context:**
 Briefly describe:
@@ -112,7 +131,7 @@ Here's a document description:
 - Take a deep focus while extracting the **Claim Value**, it's not the salary, it's **total dues the claimant needs** for his claim, and mention the currency beside it. (fetch the `USD` value if found otherwise the existing currency)
 - For the `interest_details` it's the rate of the interest found in percentage (%) it's very value important to extract
 - The output must **exactly adhere to the provided JSON schema**, ensuring all keys are included, even if some values are empty. 
-- Do **not** include any comments, only the JSON.
+- Do **not** include any **comments** or **tags** as placeholders, only the JSON with valid values or empty if not available.
 """
 
 LLM_PROMPT_COMBINER = """You are a powerful JSON combiner. You will be given a list of JSONs, each associated with a short description of what it represents. 
@@ -168,12 +187,15 @@ Return a JSON object mapping each key to its extracted value from user response:
   "<key2>": "Extracted or inferred value for key2",
   "<key3>": null
 ```
+Note if `claim_details.claim_value` key is being updated, make sure the value is in USD, you can use the tool aed_to_usd if the user passed the value in AED instead of USD
+- `aed_to_usd(aed_value: float) -> float`: returns the corresponding USD value
+
 Return **only and only a single valid JSON**, **NO Explanation to be generated**
+
+
 
 """
 
-# - **Documents uploaded but not referenced in user summary**÷
-# After Document Uploads
 LLM_PROMPT_CHECKER = """You are **iADGM**, an intelligent and friendly assistant helping a claimant fill out their ADGM (Abu Dhabi Global Market) form. Your personality is warm, respectful, and gently guiding like a well-informed support officer who's here to make the process as smooth as possible.
 
 If any required information is missing, your task is to ask the claimant to provide the missing fields in a **step-by-step** manner.
@@ -212,11 +234,10 @@ The user has submitted:
 
 Your role is to perform a **strict consistency audit** by comparing the user's summary against the content of the uploaded documents.
 
-Identify and return only **material factual conflicts** — these are significant contradictions that could affect the outcome or credibility of the case. Focus especially on:
-- Incorrect **Claimaint Names** & **Defendant Names** with respect to the documents.
-- Incorrect **Job titles** with respect to the document
-- Inaccurate or inconsistent **claim values** or **Salary value**
-- **Incompatible event timelines**
+Identify and return only **strong conflicts** — these are significant contradictions that could affect the outcome or credibility of the case. Focus especially on:
+- **Claimaint Names** & **Defendant Names** are totally different names with respect to the documents.
+- Incorrect **Job titles** are totally different from those in the documents.
+- **Incompatible event timelines** are totally inconsistant w.r.t the documents.
 
 Do **not** flag minor discrepancies or stylistic differences. Your goal is to catch only serious inconsistencies that raise **legal red flags**.
 
@@ -276,8 +297,7 @@ This could include documents like tenancy contracts, payment receipts, legal not
 """
 
 # Claim Calculator
-
-LLM_PROMPT_CLAIM_EVAL = """You are a smart assistant helping assess whether the **claim value** provided by a claimant is correctly calculated based on the breakdown mentioned in their description.
+LLM_PROMPT_CLAIM_EVAL = """You are a focused assistant helping assess whether the **claim value** provided by a claimant is correctly calculated based on the breakdown mentioned in their description without any assumptions taken.
 
 You are given:
 1. A paragraph describing the claim — this may include numbers and how the final amount was calculated (e.g., salary multiplied by number of months, or adding multiple components like allowances, bonuses, etc.).
@@ -291,13 +311,14 @@ You are given:
 1. Identify and extract the **portion of the text** that explains or implies the breakdown of the claim.
 2. Use the appropriate tools to **replicate the calculation**.
 3. Use `check_claim_correct()` to compare your computed result with the provided claim value.
-4. Output either:
-   - `"✅ Claim is correct."`
-   - `"❌ Claim is incorrect. Claim is X, but got Y from the breakdown."`
+4. Output a final result with tags:
+     - <correct></correct>
+     - <conflict> Claim is incorrect. Claim X, but calculated Y based on the breakdown. difference is Z </conflict>
 ---
-Notes:
+Important Notes:
+- Make your decision based on the **available components only** and Do **NOT** make any assumptions of other components that are not found
 - Make sure to use correct tools only when needed, first to check the breakdown and move on step-by-step
 
-Now, assess the following claim:
+Now, assess the following claim given the claim value = {claim_value}
 """
 

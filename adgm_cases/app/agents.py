@@ -114,12 +114,15 @@ class ReConstructor(BaseAgentRunner):
         super().__init__(llm, actions=actions, prompt=prompt)
 
     async def reconstruct(self, user_response: str, missing_keys: str) -> Dict:
-
-        self.prompt = self.original_prompt.format(missing_keys=missing_keys)
-        self.agent = create_react_agent(self.llm, self.actions, prompt=self.prompt)
-        content = await self.run([{"role": "user", "content": user_response}])
-        content = clean_json_string(content)
-        return await JsonOutputParser().ainvoke(content)
+        try:
+            self.prompt = self.original_prompt.format(missing_keys=missing_keys)
+            self.agent = create_react_agent(self.llm, self.actions, prompt=self.prompt)
+            content = await self.run([{"role": "user", "content": user_response}])
+            content = clean_json_string(content)
+            return await JsonOutputParser().ainvoke(content)
+        except Exception as ex:
+            print(f"Exception in Reconstructor: {ex}")
+            return content
 
 
 class Officer(BaseAgentRunner):
@@ -142,4 +145,17 @@ class Generator(BaseAgentRunner):
         )
         self.agent = create_react_agent(self.llm, self.actions, prompt=self.prompt)
         content = await self.run([{"role": "user", "content": user_claims}])
+        return content
+
+
+class ClaimantEvaluator(BaseAgentRunner):
+    def __init__(self, llm, actions, prompt):
+        self.original_prompt = prompt
+        super().__init__(llm, actions=actions, prompt=prompt)
+
+    async def evaluate(self, claim_value: str, user_details: str) -> Dict:
+        self.prompt = self.original_prompt.format(claim_value=claim_value)
+        self.agent = create_react_agent(self.llm, self.actions, prompt=self.prompt)
+        content = await self.run([{"role": "user", "content": user_details}])
+        content = clean_json_string(content)
         return content

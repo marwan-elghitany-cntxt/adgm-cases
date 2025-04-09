@@ -47,7 +47,7 @@ def cleaning_md_4llm(text: str) -> str:
     return "\n".join(clean_lines)
 
 
-async def read_pdf_text(file_path):
+async def read_pdf_text(file_path: str):
     """
     Reads text from a PDF file and returns the extracted text as a string.
 
@@ -88,12 +88,10 @@ def read_multiple_pdfs(file_paths: List[str]):
             if file_path.lower().endswith(".txt"):
                 content = read_txt_file(file_path)
             else:
-                content = pymupdf4llm.to_markdown(
-                    file_path
-                )  # Extracts content from PDF
-                cleaned_content = cleaning_md_4llm(
-                    content
-                )  # Clean the extracted content
+                # Extracts content from PDF
+                content = pymupdf4llm.to_markdown(file_path)
+                # Clean the extracted content
+                cleaned_content = cleaning_md_4llm(content)
             combined_content += (
                 cleaned_content + "\n\n" + "=====" * 10 + "\n\n"
             )  # Append the cleaned content
@@ -114,6 +112,7 @@ def extract_amount(claim_value: str) -> float:
 
 def aed_to_usd(aed_amount: float) -> float:
     """Converts AED to USD using the fixed exchange rate."""
+    print(f"Called with input: {aed_amount}")
     return round(aed_amount / 3.6725, 3)
 
 
@@ -153,7 +152,7 @@ def fetch_claim_value(results: dict) -> str | None:
     return None
 
 
-def safely_fix_claim_value(results: dict) -> dict:
+def safely_fix_claim_value(results: dict, incorrect_claim=False) -> dict:
     """
     Applies `fix_claim_value` to the claim value if it's found and valid.
     Returns updated results, or original if claim_value is missing or an error occurs.
@@ -162,7 +161,11 @@ def safely_fix_claim_value(results: dict) -> dict:
         claim_value = fetch_claim_value(results)
         if claim_value is not None:
             revised_claim_value = fix_claim_value(claim_value)
-            results["claim_details"]["claim_value"] = revised_claim_value
+            results["claim_details"]["claim_value"] = (
+                f"{revised_claim_value} (❌)"
+                if incorrect_claim
+                else revised_claim_value
+            )
     except Exception as e:
         print(f"[ERROR while fixing claim value] {e}")
     return results
@@ -191,9 +194,8 @@ def convert_to_markdown(case_dicts, include_json=True):
             markdown += f"""
 
 ##### **Structured JSON Output:**
-```json
 {json_data}
-```"""
+"""
 
         markdown_output.append(markdown.strip())
 
@@ -504,7 +506,7 @@ def txt2md_converter(text: str) -> str:
     lines = text.strip().splitlines()
 
     # Compile the monetary pattern outside the loop for efficiency
-    money_pattern = re.compile(r"(AED|USD|SAR)?\s?[\d{1,3},]*\d+\.\d{2}")
+    money_pattern = re.compile(r"(?:AED|USD|SAR)\s?\d+(?:,\d{3})*(?:\.\d{0,2})?")
 
     for i, line in enumerate(lines):
         original_line = line.strip()
@@ -537,14 +539,13 @@ def txt2md_converter(text: str) -> str:
 
             # Numbered List with value at end (Updated regex to handle optional currency and numbers)
             numbered_match = re.match(
-                r"^(\d+)\s+(.*?)(\s*(AED|USD|SAR)?\s?[\d{1,3},]*\d+\.\d{2})?$",
+                r"^(\d+)\s+(.*?)(\s*(?:AED|USD|SAR)?\s?[\d{1,3},]*\d+\.\d{2})?$",
                 original_line,
             )
             if numbered_match:
-                groups = numbered_match.groups()
-                idx = groups[0]
-                item = groups[1].strip()
-                amount = groups[4] if len(groups) > 4 and groups[4] else None
+                idx = numbered_match.group(1)
+                item = numbered_match.group(2).strip()
+                amount = numbered_match.group(3)
 
                 if amount:
                     markdown_lines.append(f"{idx}. {item} **{amount.strip()}**")
