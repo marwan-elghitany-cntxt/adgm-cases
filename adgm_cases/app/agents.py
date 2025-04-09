@@ -5,7 +5,6 @@ from langchain_core.output_parsers import JsonOutputParser
 from utils.helpers import clean_json_string
 
 
-
 class BaseAgentRunner:
     def __init__(self, llm, actions=None, prompt=""):
         self.llm = llm
@@ -25,6 +24,19 @@ class DocumentDescriber(BaseAgentRunner):
 
     async def describe(self, document: str) -> str:
         content = await self.run([{"role": "user", "content": document}])
+        return content
+
+
+class DocumentClassifier(BaseAgentRunner):
+    def __init__(self, llm, actions, prompt):
+        self.original_prompt = prompt
+        super().__init__(llm, actions=actions, prompt=prompt)
+
+    async def classify(self, user_claim: str, docs_desc_md: str) -> Dict:
+
+        self.prompt = self.original_prompt.format(user_claim=user_claim)
+        self.agent = create_react_agent(self.llm, self.actions, prompt=self.prompt)
+        content = await self.run([{"role": "user", "content": docs_desc_md}])
         content = clean_json_string(content)
         return content
 
@@ -36,9 +48,15 @@ class JSONExtractor(BaseAgentRunner):
         super().__init__(llm, actions=actions, prompt=prompt)
 
     async def extract(
-        self, document: str, case_summary: str, description: str, classification: str
+        self,
+        user_claim: str,
+        document: str,
+        case_summary: str,
+        description: str,
+        classification: str,
     ) -> dict:
         self.prompt = self.original_prompt.format(
+            user_claim=user_claim,
             case_summary=case_summary,
             document_description=description,
             classification=classification,
@@ -97,9 +115,7 @@ class ReConstructor(BaseAgentRunner):
 
     async def reconstruct(self, user_response: str, missing_keys: str) -> Dict:
 
-        self.prompt = self.original_prompt.format(
-            missing_keys=missing_keys,
-        )
+        self.prompt = self.original_prompt.format(missing_keys=missing_keys)
         self.agent = create_react_agent(self.llm, self.actions, prompt=self.prompt)
         content = await self.run([{"role": "user", "content": user_response}])
         content = clean_json_string(content)
@@ -112,3 +128,18 @@ class Officer(BaseAgentRunner):
 
     async def serve(self, messages: List[Dict]) -> str:
         return await self.run(messages)
+
+
+# General Detector Agent
+class Generator(BaseAgentRunner):
+    def __init__(self, llm, actions, prompt):
+        self.original_prompt = prompt
+        super().__init__(llm, actions=actions, prompt=prompt)
+
+    async def generate(self, user_claims, document_descriptions: List[str]) -> str:
+        self.prompt = self.original_prompt.format(
+            document_descriptions=document_descriptions
+        )
+        self.agent = create_react_agent(self.llm, self.actions, prompt=self.prompt)
+        content = await self.run([{"role": "user", "content": user_claims}])
+        return content

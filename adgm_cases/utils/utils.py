@@ -43,8 +43,8 @@ class PDF2MD:
 
     @staticmethod
     # Function to save uploaded file
-    def save_uploaded_file(uploaded_file):
-        temp_dir = "temp_pdfs"
+    def save_uploaded_file(session_id, uploaded_file):
+        temp_dir = os.path.join(session_id, "temp_pdfs")
         os.makedirs(temp_dir, exist_ok=True)
         file_path = os.path.join(temp_dir, uploaded_file.name)
 

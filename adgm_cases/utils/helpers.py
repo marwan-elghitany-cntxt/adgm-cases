@@ -66,6 +66,11 @@ async def read_pdf_text(file_path):
         print(f"An error occurred: {e}")
 
 
+def read_txt_file(file_path: str) -> str:
+    with open(file_path, "r", encoding="utf-8") as file:
+        return file.read()
+
+
 def read_multiple_pdfs(file_paths: List[str]):
     """
     Reads text from multiple PDF files and returns the combined content as a single string.
@@ -80,8 +85,15 @@ def read_multiple_pdfs(file_paths: List[str]):
 
     for file_path in file_paths:
         try:
-            content = pymupdf4llm.to_markdown(file_path)  # Extracts content from PDF
-            cleaned_content = cleaning_md_4llm(content)  # Clean the extracted content
+            if file_path.lower().endswith(".txt"):
+                content = read_txt_file(file_path)
+            else:
+                content = pymupdf4llm.to_markdown(
+                    file_path
+                )  # Extracts content from PDF
+                cleaned_content = cleaning_md_4llm(
+                    content
+                )  # Clean the extracted content
             combined_content += (
                 cleaned_content + "\n\n" + "=====" * 10 + "\n\n"
             )  # Append the cleaned content
@@ -93,20 +105,67 @@ def read_multiple_pdfs(file_paths: List[str]):
     return combined_content.strip()  # Return the concatenated content
 
 
-def aed_to_usd(aed_amount: float):
+def extract_amount(claim_value: str) -> float:
+    """Extracts and converts the numeric value from a string."""
+    pattern = r"(\d{1,3}(?:,\d{3})*(?:\.\d+)?)"
+    match = re.search(pattern, claim_value)
+    return float(match.group(0).replace(",", "")) if match else 0.0
+
+
+def aed_to_usd(aed_amount: float) -> float:
+    """Converts AED to USD using the fixed exchange rate."""
+    return round(aed_amount / 3.6725, 3)
+
+
+def fix_claim_value(claim_value: str) -> str:
+    """Converts AED to USD if the claim is in AED, returns unchanged if already in USD."""
+    # Validate the claim_value input
+    if not isinstance(claim_value, str) or not claim_value.strip():
+        print("Input claim_value should be a non-empty string.")
+        return claim_value
+
+    if "usd" in claim_value.lower():
+        return claim_value
+
+    try:
+        # Extract amount and convert to USD
+        amount = extract_amount(claim_value)
+        usd_value = aed_to_usd(amount)
+        return f"{usd_value} USD"
+    except ValueError as e:
+        print(f"Error Occurred While conversion: {e}")
+        return claim_value
+
+
+def fetch_claim_value(results: dict) -> str | None:
     """
-    Converts AED to USD using the fixed exchange rate.
-
-    Args:
-        aed_amount (float): The amount in AED.
-
-    Returns:
-        float: The equivalent amount in USD.
+    Safely fetches the 'claim_value' from results['claim_details'].
+    Returns the claim value as a string, or None if not found or invalid.
     """
-    # Fixed conversion rate (1 USD = 3.6725 AED)
-    conversion_rate = 1 / 3.6725  # Convert AED to USD
+    if (
+        isinstance(results, dict)
+        and isinstance(results.get("claim_details"), dict)
+        and isinstance(results["claim_details"].get("claim_value"), str)
+    ):
+        return results["claim_details"]["claim_value"]
 
-    return aed_amount * conversion_rate
+    print("Missing or invalid 'claim_value' in 'claim_details'")
+    return None
+
+
+def safely_fix_claim_value(results: dict) -> dict:
+    """
+    Applies `fix_claim_value` to the claim value if it's found and valid.
+    Returns updated results, or original if claim_value is missing or an error occurs.
+    """
+    try:
+        claim_value = fetch_claim_value(results)
+        if claim_value is not None:
+            revised_claim_value = fix_claim_value(claim_value)
+            results["claim_details"]["claim_value"] = revised_claim_value
+    except Exception as e:
+        print(f"[ERROR while fixing claim value] {e}")
+    return results
 
 
 def convert_to_markdown(case_dicts, include_json=True):
@@ -323,10 +382,7 @@ def json_to_markdown(data):
     # Claimant
     markdown += f"### Claimant\n"
     markdown += (
-        f"- **First Name:** {safe_get(data.get('claimant', {}), ['first_name'])}\n"
-    )
-    markdown += (
-        f"- **Last Name:** {safe_get(data.get('claimant', {}), ['last_name'])}\n"
+        f"- **Full Name:** {safe_get(data.get('claimant', {}), ['full_name'])}\n"
     )
     additional_claimants = data.get("claimant", {}).get("additional_claimants", [])
     if additional_claimants:
@@ -337,57 +393,70 @@ def json_to_markdown(data):
     # Defendant
     markdown += f"\n### Defendant\n"
     markdown += (
-        f"- **First Name:** {safe_get(data.get('defendant', {}), ['first_name'])}\n"
+        f"- **Full Name:** {safe_get(data.get('defendant', {}), ['full_name'])}\n"
     )
     additional_defendants = data.get("defendant", {}).get("additional_defendants", [])
     if additional_defendants:
         markdown += f"- **Additional Defendants:**\n"
         for defendant in additional_defendants:
             markdown += f"  - {safe_get(defendant, ['full_name'])}\n"
+    # Legal Representation
+    markdown += f"\n### Legal Representation\n"
 
-    # Claimant Filing Details
-    filing = data.get("claimant_filing_details", {})
-    markdown += f"\n### Claimant Filing Details\n"
-    rep_type = safe_get(filing, ["representation_type"])
-    markdown += f"- **Representation Type:** {rep_type}\n"
-    if rep_type == "Legal Representative":
-        rep = filing.get("legal_representative", {})
-        markdown += f"  - **Legal Representative:** {safe_get(rep, ['name'])}\n"
-        markdown += f"  - **Law Firm:** {safe_get(rep, ['firm'])}\n"
-        markdown += f"  - **Contact Name:** {safe_get(rep, ['contact_name'])}\n"
+    # Claimant Legal Representation
+    claimant_details = data.get("legal_representation", {}).get("claimant_details", {})
+
+    # Handling Self-Representation or Authorized Officer
+    claimant_rep = claimant_details.get("self_represented_or_authorised_officer", {})
+    if claimant_rep:
+        markdown += f"#### Claimant Self-Represented / Authorized Officer\n"
+        markdown += f"  - **Address for Service:** {safe_get(claimant_rep, ['address_for_service'])}\n"
+        markdown += f"  - **Telephone:** {safe_get(claimant_rep, ['telephone'])}\n"
+        markdown += f"  - **Email:** {safe_get(claimant_rep, ['email'])}\n"
+        markdown += f"  - **Name of Authorized Officer:** {safe_get(claimant_rep, ['name_of_authorised_officer'])}\n"
+        markdown += f"  - **Capacity to Act for Claimant:** {safe_get(claimant_rep, ['capacity_to_act_for_claimant'])}\n"
+
+    # Handling Legal Representation by Lawyer
+    lawyer_rep = claimant_details.get("legal_represented_filled_by_laywer", {})
+    if lawyer_rep:
+        markdown += f"#### Claimant **Legal Representative:** {safe_get(lawyer_rep, ['legal_representative'])}\n"
+        markdown += f"  - **Firm:** {safe_get(lawyer_rep, ['firm'])}\n"
+        markdown += f"  - **Address for Service:** {safe_get(lawyer_rep, ['address_for_service'])}\n"
         markdown += (
-            f"  - **Contact Telephone:** {safe_get(rep, ['contact_telephone'])}\n"
+            f"  - **Firm Reference:** {safe_get(lawyer_rep, ['firm_reference'])}\n"
         )
-        markdown += f"  - **Contact Email:** {safe_get(rep, ['contact_email'])}\n"
+        markdown += f"  - **Contact Name:** {safe_get(lawyer_rep, ['contact_name'])}\n"
+        markdown += f"  - **Contact Telephone:** {safe_get(lawyer_rep, ['contact_telephone'])}\n"
+        markdown += (
+            f"  - **Contact Email:** {safe_get(lawyer_rep, ['contact_email'])}\n"
+        )
 
-    # Defendant Address for Service
-    markdown += f"\n### Defendant Address for Service\n"
-    address_service = data.get("defendant_address_for_service", {})
-    individuals = address_service.get("individuals", [])
-    if individuals:
-        markdown += f"- **Individuals:**\n"
-        for individual in individuals:
-            markdown += f"  - **Home/Work Address:** {safe_get(individual, ['home_or_work_address'])}\n"
-            markdown += f"  - **Email:** {safe_get(individual, ['email'])}\n"
-            markdown += f"  - **Mobile:** {safe_get(individual, ['mobile'])}\n"
-    companies = address_service.get("companies", [])
-    if companies:
-        markdown += f"- **Companies:**\n"
-        for company in companies:
-            markdown += f"  - **Registered Office Address:** {safe_get(company, ['registered_office_address'])}\n"
-            markdown += f"  - **Email:** {safe_get(company, ['email'])}\n"
-            markdown += f"  - **Mobile:** {safe_get(company, ['mobile'])}\n"
+    # If neither representation exists, handle as "Not Provided"
+    if not claimant_rep and not lawyer_rep:
+        markdown += "- **Claimant Representation:** Not Provided\n"
+    # Defendant Legal Representation
+    defendant_details = data.get("legal_representation", {}).get(
+        "defendant_details", {}
+    )
+    markdown += f"#### Defendant **Legal Representative:** {safe_get(lawyer_rep, ['legal_representative'])}\n"
+    markdown += f"- **Defendant Home/Work Address:** {safe_get(defendant_details, ['home_or_work_address'])}\n"
+    markdown += f"- **Defendant Contact Email:** {safe_get(defendant_details, ['contact_email'])}\n"
+    markdown += f"- **Defendant Contact Telephone:** {safe_get(defendant_details, ['contact_telephone'])}\n"
 
-    # Nature and Value of Claim
-    claim = data.get("nature_and_value_of_claim", {})
-    markdown += f"\n### Nature and Value of Claim\n"
-    markdown += f"- **Nature of Claim:** {safe_get(claim, ['nature_of_claim'])}\n"
-    markdown += f"- **Claim Value (USD):** {safe_get(claim, ['claim_value_usd'])}\n"
-    markdown += f"- **Interest Details:** {safe_get(claim, ['interest_details'])}\n"
+    # Claim Details
+    claim_details = data.get("claim_details", {})
+    markdown += f"\n### Claim Details\n"
+    markdown += (
+        f"- **Nature of Claim:** {safe_get(claim_details, ['nature_of_claim'])}\n"
+    )
+    markdown += f"- **Claim Value (USD):** {safe_get(claim_details, ['claim_value'])}\n"
+    markdown += (
+        f"- **Interest Details:** {safe_get(claim_details, ['interest_details'])}\n"
+    )
 
     # Final Orders Sought
     markdown += f"\n### Final Orders Sought\n"
-    orders = data.get("final_orders_sought", [])
+    orders = claim_details.get("final_orders_sought", [])
     if orders:
         for order in orders:
             markdown += f"- {order or 'N/A'}\n"
@@ -395,34 +464,36 @@ def json_to_markdown(data):
         markdown += f"- N/A\n"
 
     # Particulars of Claim
-    particulars = data.get("particulars_of_claim", {})
+    particulars_of_claim = claim_details.get("particulars_of_claim", {})
     markdown += f"\n### Particulars of Claim\n"
-    details = particulars.get("details", [])
+    details = particulars_of_claim.get("details", [])
     if details:
         markdown += f"- **Details:**\n"
         for detail in details:
             markdown += f"  - {detail or 'N/A'}\n"
-    docs = particulars.get("supporting_documents", [])
+    docs = particulars_of_claim.get("supporting_documents", [])
     if docs:
         markdown += f"- **Supporting Documents:**\n"
         for doc in docs:
             markdown += f"  - {doc or 'N/A'}\n"
 
     # Employment Terms
-    employment = data.get("employment_terms", {})
-    remuneration = employment.get("rate_of_remuneration", {})
+    employment_terms = data.get("employment_terms", {})
     markdown += f"\n### Employment Terms\n"
-    markdown += f"- **Employment Agreement Attached:** {safe_get(employment, ['employment_agreement_attached'])}\n"
-    markdown += f"- **Rate of Remuneration:** {safe_get(remuneration, ['currency'])} {safe_get(remuneration, ['amount'])} ({safe_get(remuneration, ['payment_frequency'])})\n"
+    markdown += f"- **Employment Agreement Attached:** {safe_get(employment_terms, ['employment_agreement_attached'])}\n"
+    markdown += f"- **Rate of Remuneration:** {safe_get(employment_terms, ['rate_of_remuneration'])}\n"
 
-    # Statement of Grounds
-    markdown += f"\n### Statement of Grounds\n"
-    markdown += f"- **Jurisdictional Grounds:** {safe_get(data.get('statement_of_grounds', {}), ['jurisdictional_grounds'])}\n"
+    # Jurisdiction
+    jurisdiction = data.get("jurisdiction", {})
+    markdown += f"\n### Jurisdiction\n"
+    markdown += (
+        f"- **Grounds for Claim:** {safe_get(jurisdiction, ['grounds_for_claim'])}\n"
+    )
 
     # Mediation
     mediation = data.get("mediation", {})
     markdown += f"\n### Mediation\n"
-    markdown += f"- **Opt-in for Mediation:** {safe_get(mediation, ['opt_in'])}\n"
+    markdown += f"- **Preferred:** {safe_get(mediation, ['preferred'])}\n"
     markdown += f"- **Reason if No:** {safe_get(mediation, ['reason_if_no'])}\n"
 
     return markdown
