@@ -25,11 +25,11 @@ def read_json_file(file_path):
             data = json.load(file)
         return data
     except FileNotFoundError:
-        print(f"Error: The file at {file_path} was not found.")
+        logger.info(f"Error: The file at {file_path} was not found.")
     except json.JSONDecodeError:
-        print("Error: The file is not a valid JSON.")
+        logger.info("Error: The file is not a valid JSON.")
     except Exception as e:
-        print(f"An unexpected error occurred: {e}")
+        logger.info(f"An unexpected error occurred: {e}")
 
 
 def cleaning_md_4llm(text: str) -> str:
@@ -61,9 +61,9 @@ async def read_pdf_text(file_path: str):
         content = pymupdf4llm.to_markdown(file_path)
         return cleaning_md_4llm(content)
     except FileNotFoundError:
-        print(f"Error: The file at {file_path} was not found.")
+        logger.info(f"Error: The file at {file_path} was not found.")
     except Exception as e:
-        print(f"An error occurred: {e}")
+        logger.info(f"An error occurred: {e}")
 
 
 def read_txt_file(file_path: str) -> str:
@@ -96,9 +96,9 @@ def read_multiple_pdfs(file_paths: List[str]):
                 cleaned_content + "\n\n" + "=====" * 10 + "\n\n"
             )  # Append the cleaned content
         except FileNotFoundError:
-            print(f"Error: The file at {file_path} was not found.")
+            logger.info(f"Error: The file at {file_path} was not found.")
         except Exception as e:
-            print(f"An error occurred while processing {file_path}: {e}")
+            logger.info(f"An error occurred while processing {file_path}: {e}")
 
     return combined_content.strip()  # Return the concatenated content
 
@@ -112,7 +112,7 @@ def extract_amount(claim_value: str) -> float:
 
 def aed_to_usd(aed_amount: float) -> float:
     """Converts AED to USD using the fixed exchange rate."""
-    print(f"Called with input: {aed_amount}")
+    logger.info(f"Called with input: {aed_amount}")
     return round(aed_amount / 3.6725, 3)
 
 
@@ -120,7 +120,7 @@ def fix_claim_value(claim_value: str) -> str:
     """Converts AED to USD if the claim is in AED, returns unchanged if already in USD."""
     # Validate the claim_value input
     if not isinstance(claim_value, str) or not claim_value.strip():
-        print("Input claim_value should be a non-empty string.")
+        logger.info("Input claim_value should be a non-empty string.")
         return claim_value
 
     if "usd" in claim_value.lower():
@@ -132,7 +132,7 @@ def fix_claim_value(claim_value: str) -> str:
         usd_value = aed_to_usd(amount)
         return f"{usd_value} USD"
     except ValueError as e:
-        print(f"Error Occurred While conversion: {e}")
+        logger.info(f"Error Occurred While conversion: {e}")
         return claim_value
 
 
@@ -148,7 +148,7 @@ def fetch_claim_value(results: dict) -> str | None:
     ):
         return results["claim_details"]["claim_value"]
 
-    print("Missing or invalid 'claim_value' in 'claim_details'")
+    logger.info("Missing or invalid 'claim_value' in 'claim_details'")
     return None
 
 
@@ -167,7 +167,7 @@ def safely_fix_claim_value(results: dict, incorrect_claim=False) -> dict:
                 else revised_claim_value
             )
     except Exception as e:
-        print(f"[ERROR while fixing claim value] {e}")
+        logger.info(f"[ERROR while fixing claim value] {e}")
     return results
 
 
@@ -575,7 +575,7 @@ def txt2md_converter(text: str) -> str:
 
         except Exception as e:
             # In case any error occurs, log it and continue
-            print(f"[ERROR: Could not process line: {original_line}]: \n\n {e} \n")
+            logger.info(f"[ERROR: Could not process line: {original_line}]: \n\n {e} \n")
             return text
 
     return "\n".join(markdown_lines)

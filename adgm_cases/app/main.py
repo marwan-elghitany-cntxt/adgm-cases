@@ -4,6 +4,7 @@ import uuid
 from pathlib import Path
 from typing import Dict, List
 
+from loguru import logger
 import streamlit as st
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
@@ -139,10 +140,10 @@ async def analyze_documents(files, claims_text: str):
     missing_keys = find_missing_keys(schema=JSON_SCHEMA, data=results)
     if incorrect_claim:
         # Adding claim_value ❌ to missing keys to enable updating it
-        print("adding claim_value ❌ to missing keys to enable updating it ")
+        logger.info("adding claim_value ❌ to missing keys to enable updating it ")
         missing_keys += ["claim_details.claim_value"]
 
-    print(f"missing keys: 2 {missing_keys}")
+    logger.info(f"missing keys: 2 {missing_keys}")
     st.session_state.summary = json_to_markdown(results)
     st.session_state.summary_json = results
 
@@ -172,10 +173,10 @@ with col1:
     submit = st.button("Submit for Analysis")
 
     if submit:
-        print("Submit Button Pressed !!")
-        # print(f"{uploaded_files=}")
-        # print(f"{particular_of_claims.strip()=}")
-        print("Submit Button Pressed !! DONE")
+        logger.info("Submit Button Pressed !!")
+        # logger.info(f"{uploaded_files=}")
+        # logger.info(f"{particular_of_claims.strip()=}")
+        logger.info("Submit Button Pressed !! DONE")
 
         if uploaded_files and particular_of_claims.strip():
             loop = asyncio.new_event_loop()
@@ -199,7 +200,6 @@ with col1:
                             "role": "assistant",
                             "content": f"Missing documents to be uploaded: {missing_pts}",
                         },
-                        # {"role": "system", "content": f"Documents already Uploaded but user didn't reference through the his summary: {nrf_pts}"},
                     ]
                 )
                 llm_reply = asyncio.run(
@@ -242,10 +242,10 @@ with col1:
             filled_dict = asyncio.run(
                 reconstructor.reconstruct(user_input, st.session_state["missing_keys"])
             )
-            print("RECONSTRUCTOR OUTPUT:")
-            print("=====")
-            print(filled_dict)
-            print("=====")
+            logger.info("RECONSTRUCTOR OUTPUT:")
+            logger.info("=====")
+            logger.info(filled_dict)
+            logger.info("=====")
             if isinstance(filled_dict, dict):
                 results = inject_flattened_values(
                     filled_dict, st.session_state.summary_json

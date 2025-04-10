@@ -1,5 +1,6 @@
 import asyncio
 from typing import Dict, List
+from loguru import logger
 from langchain_core.output_parsers import JsonOutputParser
 from tools.tools_helpers import check_claim_correct, multiply_values, sum_values
 from agents import (
@@ -67,7 +68,7 @@ class DocumentProcessor:
         document = await read_pdf_text(file_path)
         file_id = gen_file_id()
         if not document:
-            print(f"Failed to read document in path: {file_path}")
+            logger.info(f"Failed to read document in path: {file_path}")
             return {
                 "file_id": file_id,
                 "file": file_path,
@@ -103,9 +104,9 @@ class DocumentProcessor:
         )
         case_documents_md = convert_documents_ids_to_markdown(case_documents)
         classification = await classifier.classify(user_claim, case_documents_md)
-        print("---")
-        print(classification)
-        print("---")
+        logger.info("---")
+        logger.info(classification)
+        logger.info("---")
         return await JsonOutputParser().ainvoke(classification)
 
     async def _extract_json(
@@ -230,9 +231,9 @@ class DocumentProcessor:
         # # Step 1: Read all documents
         read_tasks = [self._read_document(fp) for fp in file_paths]
         file_contents = await asyncio.gather(*read_tasks)
-        print("Process started ... ")
+        logger.info("Process started ... ")
         # Step 2: Describe all documents
-        print("Description started ... ")
+        logger.info("Description started ... ")
         describe_tasks = [self._describe_document(doc) for doc in file_contents]
         description_results = await asyncio.gather(*describe_tasks)
         for i, description in enumerate(description_results):
@@ -242,19 +243,19 @@ class DocumentProcessor:
                 user_claim_desc = description["description"]
                 del description_results[i]
 
-        print("user_claim_des")
-        print(f"{user_claim_desc}")
-        print("user_claim_des")
+        logger.info("user_claim_des")
+        logger.info(f"{user_claim_desc}")
+        logger.info("user_claim_des")
 
         # Step 3: Classify documents
-        print("Classification started ... ")
+        logger.info("Classification started ... ")
         classification_result = await self._classify_document(
             user_claim=user_claim_desc, case_documents=description_results
         )
         case_summary = classification_result.get("case_summary")
         docs_classification = classification_result.get("details")
 
-        print("Detectors started ... ")
+        logger.info("Detectors started ... ")
         results = await self.run_all_detectors(
             user_claim=user_claim_desc,
             description_results=description_results,
@@ -262,14 +263,14 @@ class DocumentProcessor:
         )
         missing_docs_points, conflict_points = results
 
-        print("")
-        print(f"{missing_docs_points=}")
-        print("")
-        print("")
-        print(f"{conflict_points=}")
-        print("")
+        logger.info("")
+        logger.info(f"{missing_docs_points=}")
+        logger.info("")
+        logger.info("")
+        logger.info(f"{conflict_points=}")
+        logger.info("")
 
-        print("JSON Generation started ... ")
+        logger.info("JSON Generation started ... ")
         # Step 4: Extract JSON
         extract_tasks = [
             self._extract_json(
@@ -282,19 +283,19 @@ class DocumentProcessor:
         ]
         final_results = await asyncio.gather(*extract_tasks)
 
-        print("final_results")
-        print(f"{final_results}")
-        print("final_results")
+        logger.info("final_results")
+        logger.info(f"{final_results}")
+        logger.info("final_results")
 
-        print("MD started ... ")
+        logger.info("MD started ... ")
         # Step 5: Convert to markdown
         md_results = convert_to_markdown(final_results)
 
-        print("md_resultsmd_resultsmd_resultsmd_results")
-        print(f"{md_results=}")
-        print("md_resultsmd_resultsmd_resultsmd_results")
+        logger.info("md_resultsmd_resultsmd_resultsmd_results")
+        logger.info(f"{md_results=}")
+        logger.info("md_resultsmd_resultsmd_resultsmd_results")
 
-        print("Combination started ... ")
+        logger.info("Combination started ... ")
         # Step 6: Combine results
         combiner = JSONCombiner(
             llm=self.llm,
@@ -304,35 +305,35 @@ class DocumentProcessor:
         )
         combined_results = await combiner.combine(case_summary, md_results)
 
-        print("<<combined_results>>")
-        print(combined_results)
-        print("<<combined_results>>")
+        logger.info("<<combined_results>>")
+        logger.info(combined_results)
+        logger.info("<<combined_results>>")
 
-        print("Missing Keys started ... ")
+        logger.info("Missing Keys started ... ")
         # Step 7: Revise for Missing Keys
         missing_keys = find_missing_keys(
             schema=self.json_structure, data=combined_results
         )
 
-        print("MD 2 started ... ")
+        logger.info("MD 2 started ... ")
         md_results_wojson = convert_to_markdown(final_results, include_json=False)
 
-        print("Revisor started ... ")
+        logger.info("Revisor started ... ")
         revisor = Revisor(llm=self.llm, actions=[], prompt=self.revisor_prompt)
 
         filled_dict = await revisor.revise(
             document=md_results_wojson, missing_keys=str(missing_keys)
         )
-        print("Injection started ... ")
-        print(f"{combined_results=}")
+        logger.info("Injection started ... ")
+        logger.info(f"{combined_results=}")
         revised_results = inject_flattened_values(filled_dict, combined_results)
         incorrect_claim = False
 
-        print("claim_value_evaluation ... ")
+        logger.info("claim_value_evaluation ... ")
         claim_value_evaluation = await self.evaluate_claim_value(
             results=revised_results, user_input=user_claim_desc
         )
-        print(f"{claim_value_evaluation=}")
+        logger.info(f"{claim_value_evaluation=}")
         if claim_value_evaluation is not None:
 
             if "<conflict>" in claim_value_evaluation:
@@ -341,11 +342,11 @@ class DocumentProcessor:
                     conflict_points = f"{claim_value_evaluation}"
                 else:
                     conflict_points = f"{claim_value_evaluation}\n" + conflict_points
-            print("")
-            print("conflict_points updated")
-            print("")
-            print(conflict_points)
-            print("")
+            logger.info("")
+            logger.info("conflict_points updated")
+            logger.info("")
+            logger.info(conflict_points)
+            logger.info("")
 
         revised_results = safely_fix_claim_value(revised_results, incorrect_claim)
 

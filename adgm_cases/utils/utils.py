@@ -23,7 +23,7 @@ class PDF2MD:
             md_text = PDF2MD.cleaning_md_4llm(md_text)
             return md_text
         except Exception as e:
-            print(f"Error while converting PDF to markdown: {e}")
+            logger.info(f"Error while converting PDF to markdown: {e}")
             raise ValueError(e)
 
     @staticmethod

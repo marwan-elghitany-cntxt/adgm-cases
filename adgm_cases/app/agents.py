@@ -1,4 +1,5 @@
 from typing import Dict, List
+from loguru import logger
 from langgraph.prebuilt import create_react_agent
 from langchain_core.output_parsers import JsonOutputParser
 
@@ -121,7 +122,7 @@ class ReConstructor(BaseAgentRunner):
             content = clean_json_string(content)
             return await JsonOutputParser().ainvoke(content)
         except Exception as ex:
-            print(f"Exception in Reconstructor: {ex}")
+            logger.info(f"Exception in Reconstructor: {ex}")
             return content
 
 

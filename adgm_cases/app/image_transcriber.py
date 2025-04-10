@@ -4,6 +4,7 @@ import re
 import base64
 from glob import glob
 from typing import List, Dict
+from loguru import logger
 from langchain_openai import ChatOpenAI
 
 from templates.prompt_templates import TRANSCRIPER_TEMPLATE
@@ -71,7 +72,7 @@ class ImageTranscriber:
             imgs_path = glob(self.image_folder)
 
         if not imgs_path:
-            print("No images found for transcription.")
+            logger.info("No images found for transcription.")
             return []
 
         # Determine the output directory
@@ -98,7 +99,7 @@ class ImageTranscriber:
         with open(output_file, "w", encoding="utf-8") as md_file:
             md_file.write("\n".join(transcriptions))
 
-        print(f"Transcriptions saved to: {output_file}")
+        logger.info(f"Transcriptions saved to: {output_file}")
         return [c.content for c in sorted_results.values()]
 
     async def run(self, imgs_path: List[str] = None, progress_bar=None):
