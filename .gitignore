@@ -175,5 +175,5 @@ cython_debug/
 *.pdf
 *.ipynb
 *.json
-*.txt
+# *.txt
 adgm_cases/users/*
