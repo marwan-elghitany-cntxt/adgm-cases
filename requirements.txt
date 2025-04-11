@@ -77,5 +77,5 @@ win32-setctime==1.2.0
 xxhash==3.5.0
 zstandard==0.23.0
 python-dotenv==1.1.0
-pymupdf4llm==1.25.5
+pymupdf4llm==0.0.17
 pdf2image==1.17.0
