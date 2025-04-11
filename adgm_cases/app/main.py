@@ -12,7 +12,7 @@ import streamlit as st
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 from agents import Officer, ReConstructor
-from constants import CLAIM_FORM_PATH, EMPLOYMENT_FORM_PATH, TEMP_DIR
+from constants import CLAIM_FORM, EMPLOYMENT_FORM, TEMP_DIR
 from document_processor import DocumentProcessor
 from image_transcriber import ImageTranscriber
 from templates.prompt_templates import (
@@ -51,8 +51,8 @@ st.title("ADGM E-Courts Claim Assistant")
 
 # Sidebar toggle
 form_type = st.sidebar.radio("Select Form Type", ("Employment Form", "Claim Form"))
-form_path = EMPLOYMENT_FORM_PATH if form_type == "Employment Form" else CLAIM_FORM_PATH
-JSON_SCHEMA = read_json_file(form_path)
+JSON_SCHEMA = EMPLOYMENT_FORM if form_type == "Employment Form" else CLAIM_FORM
+# JSON_SCHEMA = read_json_file(form_path)
 
 # Initialize session state
 st.session_state.setdefault("chat_history", [])
