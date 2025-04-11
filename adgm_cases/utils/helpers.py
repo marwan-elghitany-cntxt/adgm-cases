@@ -3,6 +3,7 @@ import json
 import uuid
 from typing import List
 from copy import deepcopy
+from loguru import logger
 import pymupdf4llm
 
 
