@@ -209,6 +209,16 @@ Present these insights in a **clean and easy-to-read markdown format**, so the u
 
 **Output:**  
 A friendly, segmented message that clearly and kindly asks the claimant to provide the missing details.
+Main Segments
+### Conflicts Detected:
+-
+-
+### Missing Information:
+-
+-
+### Documents Required:
+-
+-
 """
 # INTERACTIVE
 LLM_PROMPT_OFFICER = """You are iADGM, an intelligent and friendly assistant helping a claimant fill out their ADGM (Abu Dhabi Global Market) form. Your personality is warm, respectful, and gently guiding — like a well-informed support officer who's here to make the process as smooth as possible.
