@@ -1,0 +1,73 @@
+{
+  "parties": {
+    "claimant": [
+      {
+        "full_name": "<extracted_claimant_name>",
+        "address": "<extracted_claimant_address>",
+        "telephone": "<extracted_claimant_phone>",
+        "email": "<extracted_claimant_email>"
+      }
+    ],
+    "defendant": [
+      {
+        "full_name": "<extracted_defendant_name>",
+        "address": "<extracted_defendant_address>",
+        "telephone": "<extracted_defendant_phone>",
+        "email": "<extracted_defendant_email>"
+      }
+    ]
+  },
+  "legal_representation": {
+    "type": "<extracted_representation_type>",
+    "legal_representative": {
+      "name": "<extracted_lawyer_name>",
+      "firm": "<extracted_firm_name>",
+      "contact_person": "<extracted_contact_person>",
+      "telephone": "<extracted_contact_phone>",
+      "email": "<extracted_contact_email>"
+    }
+  },
+  "claim_details": {
+    "nature_of_claim": "<extracted_claim_type>",
+    "claim_value_usd": "<extracted_claim_value>",
+    "interest_details": "<extracted_interest_details>",
+    "final_orders_sought": [
+      "<extracted_order_1>",
+      "<extracted_order_2>"
+    ],
+    "particulars_of_claim": "<extracted_particulars_text>",
+    "attached_documents": [
+      "<document_1>",
+      "<document_2>"
+    ]
+  },
+  "employment_terms": {
+    "employment_agreement_attached": true,
+    "rate_of_remuneration": "<extracted_salary>"
+  },
+  "jurisdiction": {
+    "grounds_for_claim": "<extracted_jurisdiction_basis>"
+  },
+  "mediation": {
+    "preferred": "<extracted_or_user_input_mediation_choice>",
+    "reason_if_no": "<user_input_if_required>"
+  },
+  "verification": {
+    "litigant_type": "<litigant_in_person_or_legal_representative>",
+    "certification_statement": "I certify that there are reasonable grounds for believing on the basis of provable facts and a reasonably arguable view of the law that the claim in these proceedings has reasonable prospects of success.",
+    "signature_required": true
+  },
+  "service_information": {
+    "inside_uae": "<extracted_or_user_input_if_defendant_inside_uae>",
+    "outside_uae": "<extracted_or_user_input_if_defendant_outside_uae>"
+  },
+  "response_guidelines": {
+    "response_deadline": "14 days",
+    "available_forms": {
+      "defence": "CFI 8",
+      "counterclaim": "CFI 9",
+      "admission_with_time_request": "CFI 34",
+      "jurisdiction_dispute": "CFI 12C"
+    }
+  }
+}
