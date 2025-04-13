@@ -87,7 +87,6 @@ class DocumentProcessor:
 
         describer = DocumentDescriber(
             llm=self.llm,
-            actions=[],
             prompt=self.describer_prompt,
         )
         description = await describer.describe(document_data["document"])
@@ -97,17 +96,10 @@ class DocumentProcessor:
         self, user_claim: str, case_documents: list[dict]
     ) -> dict:
 
-        classifier = DocumentClassifier(
-            llm=self.llm,
-            actions=[],
-            prompt=self.classifier_prompt,
-        )
+        classifier = DocumentClassifier(llm=self.llm, prompt=self.classifier_prompt)
         case_documents_md = convert_documents_ids_to_markdown(case_documents)
         classification = await classifier.classify(user_claim, case_documents_md)
-        logger.info("---")
-        logger.info(classification)
-        logger.info("---")
-        return await JsonOutputParser().ainvoke(classification)
+        return classification
 
     async def _extract_json(
         self,
@@ -118,7 +110,6 @@ class DocumentProcessor:
     ) -> dict:
         extractor = JSONExtractor(
             llm=self.llm,
-            actions=[],
             prompt=self.extractor_prompt,
             json_structure=self.json_structure,
         )
@@ -189,7 +180,7 @@ class DocumentProcessor:
 
         # Prompts for the detectors
         prompts = [
-            (self.missing_docs_prompt, "missing"),
+            # (self.missing_docs_prompt, "missing"),
             # (self.not_refrenced_docs_prompt, "not_referenced"),
             (self.poclaims_conflicts_prompt, "conflict"),
         ]
@@ -252,6 +243,9 @@ class DocumentProcessor:
         classification_result = await self._classify_document(
             user_claim=user_claim_desc, case_documents=description_results
         )
+        logger.info("---")
+        logger.info(classification_result)
+        logger.info("---")
         case_summary = classification_result.get("case_summary")
         docs_classification = classification_result.get("details")
 
@@ -261,10 +255,10 @@ class DocumentProcessor:
             description_results=description_results,
             classification_result=classification_result,
         )
-        missing_docs_points, conflict_points = results
+        conflict_points = results[0]
 
         logger.info("")
-        logger.info(f"{missing_docs_points=}")
+        # logger.info(f"{missing_docs_points=}")
         logger.info("")
         logger.info("")
         logger.info(f"{conflict_points=}")
@@ -299,11 +293,12 @@ class DocumentProcessor:
         # Step 6: Combine results
         combiner = JSONCombiner(
             llm=self.llm,
-            actions=[],
             prompt=self.combiner_prompt,
             json_structure=self.json_structure,
         )
-        combined_results = await combiner.combine(case_summary, md_results)
+        combined_results = await combiner.combine(
+            case_summary=case_summary, documents_descriptions_md=md_results
+        )
 
         logger.info("<<combined_results>>")
         logger.info(combined_results)
@@ -319,10 +314,10 @@ class DocumentProcessor:
         md_results_wojson = convert_to_markdown(final_results, include_json=False)
 
         logger.info("Revisor started ... ")
-        revisor = Revisor(llm=self.llm, actions=[], prompt=self.revisor_prompt)
+        revisor = Revisor(llm=self.llm, prompt=self.revisor_prompt)
 
         filled_dict = await revisor.revise(
-            document=md_results_wojson, missing_keys=str(missing_keys)
+            document=md_results_wojson, missing_keys=missing_keys
         )
         logger.info("Injection started ... ")
         logger.info(f"{combined_results=}")
@@ -350,4 +345,4 @@ class DocumentProcessor:
 
         revised_results = safely_fix_claim_value(revised_results, incorrect_claim)
 
-        return revised_results, missing_docs_points, conflict_points, incorrect_claim
+        return revised_results, conflict_points, incorrect_claim

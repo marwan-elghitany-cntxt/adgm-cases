@@ -2,72 +2,47 @@
   "parties": {
     "claimant": [
       {
-        "full_name": "<extracted_claimant_name>",
+        "full_name": "<extracted_claimant_full_name>",
         "address": "<extracted_claimant_address>",
-        "telephone": "<extracted_claimant_phone>",
-        "email": "<extracted_claimant_email>"
+        "telephone": "<extracted_claimant_telephone_number>",
+        "email": "<extracted_claimant_email_address>"
       }
     ],
     "defendant": [
       {
-        "full_name": "<extracted_defendant_name>",
+        "full_name": "<extracted_defendant_full_name>",
         "address": "<extracted_defendant_address>",
-        "telephone": "<extracted_defendant_phone>",
-        "email": "<extracted_defendant_email>"
+        "telephone": "<extracted_defendant_telephone_number>",
+        "email": "<extracted_defendant_email_address>"
       }
     ]
   },
   "legal_representation": {
-    "type": "<extracted_representation_type>",
+    "type": "<extracted_type_of_legal_representation>",
     "legal_representative": {
-      "name": "<extracted_lawyer_name>",
-      "firm": "<extracted_firm_name>",
-      "contact_person": "<extracted_contact_person>",
-      "telephone": "<extracted_contact_phone>",
-      "email": "<extracted_contact_email>"
+      "name": "<extracted_legal_representative_full_name>",
+      "firm": "<extracted_law_firm_name>",
+      "contact_person": "<extracted_contact_person_name>",
+      "telephone": "<extracted_legal_representative_telephone_number>",
+      "email": "<extracted_legal_representative_email_address>"
     }
   },
   "claim_details": {
-    "nature_of_claim": "<extracted_claim_type>",
-    "claim_value_usd": "<extracted_claim_value>",
-    "interest_details": "<extracted_interest_details>",
+    "nature_of_claim": "<extracted_nature_of_claim>",
+    "claim_value_usd": "<extracted_total_claim_value_in_usd>",
+    "interest_details": "<extracted_interest_rate_and_terms>",
     "final_orders_sought": [
-      "<extracted_order_1>",
-      "<extracted_order_2>"
+      "<extracted_final_order_1_description>",
+      "<extracted_final_order_2_description>"
     ],
-    "particulars_of_claim": "<extracted_particulars_text>",
+    "particulars_of_claim": "<extracted_particulars_of_claim_text>",
     "attached_documents": [
-      "<document_1>",
-      "<document_2>"
+      "<attached_document_filename_or_id_1>",
+      "<attached_document_filename_or_id_2>"
     ]
   },
   "employment_terms": {
     "employment_agreement_attached": true,
-    "rate_of_remuneration": "<extracted_salary>"
-  },
-  "jurisdiction": {
-    "grounds_for_claim": "<extracted_jurisdiction_basis>"
-  },
-  "mediation": {
-    "preferred": "<extracted_or_user_input_mediation_choice>",
-    "reason_if_no": "<user_input_if_required>"
-  },
-  "verification": {
-    "litigant_type": "<litigant_in_person_or_legal_representative>",
-    "certification_statement": "I certify that there are reasonable grounds for believing on the basis of provable facts and a reasonably arguable view of the law that the claim in these proceedings has reasonable prospects of success.",
-    "signature_required": true
-  },
-  "service_information": {
-    "inside_uae": "<extracted_or_user_input_if_defendant_inside_uae>",
-    "outside_uae": "<extracted_or_user_input_if_defendant_outside_uae>"
-  },
-  "response_guidelines": {
-    "response_deadline": "14 days",
-    "available_forms": {
-      "defence": "CFI 8",
-      "counterclaim": "CFI 9",
-      "admission_with_time_request": "CFI 34",
-      "jurisdiction_dispute": "CFI 12C"
-    }
+    "rate_of_remuneration": "<extracted_monthly_or_hourly_salary_amount>"
   }
 }

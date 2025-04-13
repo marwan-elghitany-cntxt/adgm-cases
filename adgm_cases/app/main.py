@@ -25,7 +25,6 @@ from utils.helpers import (
     find_missing_keys,
     inject_flattened_values,
     json_to_markdown,
-    read_json_file,
     txt2md_converter,
 )
 from utils.utils import PDF2MD
@@ -38,6 +37,7 @@ llm = ChatOpenAI(
     api_key=os.environ["OPENAI_API_KEY"],
     model="gpt-4o",
     stream_usage=True,
+    temperature=0.1,
 )
 
 reconstructor = ReConstructor(
@@ -137,8 +137,8 @@ async def analyze_documents(files, claims_text: str):
 
     processor = DocumentProcessor(llm=llm, json_structure=JSON_SCHEMA)
 
-    results, missing_pts, conflict_pts, incorrect_claim = (
-        await processor.process_documents(file_paths)
+    results, conflict_pts, incorrect_claim = await processor.process_documents(
+        file_paths
     )
     missing_keys = find_missing_keys(schema=JSON_SCHEMA, data=results)
     if incorrect_claim:
@@ -150,7 +150,7 @@ async def analyze_documents(files, claims_text: str):
     st.session_state.summary = json_to_markdown(results)
     st.session_state.summary_json = results
 
-    return results, missing_keys, missing_pts, conflict_pts
+    return results, missing_keys, conflict_pts
 
 
 async def ask_llm(messages: List[Dict], is_checker=False):
@@ -184,7 +184,7 @@ with col1:
         if uploaded_files and particular_of_claims.strip():
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-            results, missing_keys, missing_pts, conflict_pts = loop.run_until_complete(
+            results, missing_keys, conflict_pts = loop.run_until_complete(
                 analyze_documents(uploaded_files, particular_of_claims)
             )
 
@@ -198,10 +198,6 @@ with col1:
                         {
                             "role": "assistant",
                             "content": f"Conflicts found: {conflict_pts}",
-                        },
-                        {
-                            "role": "assistant",
-                            "content": f"Missing documents to be uploaded: {missing_pts}",
                         },
                     ]
                 )

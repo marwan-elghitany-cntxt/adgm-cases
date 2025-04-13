@@ -3,6 +3,10 @@ from loguru import logger
 from langgraph.prebuilt import create_react_agent
 from langchain_core.output_parsers import JsonOutputParser
 
+from general_inference import BaseLLM
+from templates.schemas import CaseAnalysis, RevisorSchema
+from templates.claim_json_schema import ClaimForm
+from templates.employment_json_schema import EmployeeForm
 from utils.helpers import clean_json_string
 
 
@@ -19,94 +23,123 @@ class BaseAgentRunner:
         return response["messages"][-1].content
 
 
-class DocumentDescriber(BaseAgentRunner):
-    def __init__(self, llm, actions, prompt):
-        super().__init__(llm, actions=actions, prompt=prompt)
+class DocumentDescriber(BaseLLM):
+    def __init__(self, llm, prompt):
+        super().__init__(model=llm, template=prompt, keys=["document"])
 
     async def describe(self, document: str) -> str:
-        content = await self.run([{"role": "user", "content": document}])
+        content = await self.get_chat_response_regular({"document": document})
         return content
 
 
-class DocumentClassifier(BaseAgentRunner):
-    def __init__(self, llm, actions, prompt):
-        self.original_prompt = prompt
-        super().__init__(llm, actions=actions, prompt=prompt)
+class DocumentClassifier(BaseLLM):
+    def __init__(self, llm, prompt):
+        super().__init__(
+            model=llm,
+            template=prompt,
+            keys=["documents_description"],
+            parser=JsonOutputParser(pydantic_object=CaseAnalysis),
+        )
 
     async def classify(self, user_claim: str, docs_desc_md: str) -> Dict:
-
-        self.prompt = self.original_prompt.format(user_claim=user_claim)
-        self.agent = create_react_agent(self.llm, self.actions, prompt=self.prompt)
-        content = await self.run([{"role": "user", "content": docs_desc_md}])
-        content = clean_json_string(content)
+        content = await self.get_chat_response_regular(
+            {
+                "user_claim": user_claim,
+                "documents_description": docs_desc_md,
+                "output_schema": CaseAnalysis.Config.json_schema_extra["example"],
+            }
+        )
         return content
 
 
-class JSONExtractor(BaseAgentRunner):
-    def __init__(self, llm, actions, prompt, json_structure):
-        self.json_structure = json_structure
-        self.original_prompt = prompt
-        super().__init__(llm, actions=actions, prompt=prompt)
+class JSONExtractor(BaseLLM):
+    def __init__(self, llm, prompt, json_structure):
+
+        self.parser = (
+            JsonOutputParser(pydantic_object=ClaimForm)
+            if "parties" in json_structure
+            else JsonOutputParser(pydantic_object=EmployeeForm)
+        )
+        self.output_schema = (
+            ClaimForm.Config.json_schema_extra["example"]
+            if "parties" in json_structure
+            else EmployeeForm.Config.json_schema_extra["example"]
+        )
+        super().__init__(
+            model=llm,
+            template=prompt,
+            keys=["document"],
+            parser=self.parser,
+        )
 
     async def extract(
         self,
+        case_summary: str,
+        classification: str,
         user_claim: str,
         document: str,
-        case_summary: str,
         description: str,
-        classification: str,
     ) -> dict:
-        self.prompt = self.original_prompt.format(
-            user_claim=user_claim,
-            case_summary=case_summary,
-            document_description=description,
-            classification=classification,
+        content = await self.get_chat_response_regular(
+            dict(
+                case_summary=case_summary,
+                classification=classification,
+                user_claim=user_claim,
+                document_description=description,
+                output_schema=self.output_schema,
+                document=document,
+            )
         )
-        self.agent = create_react_agent(self.llm, self.actions, prompt=self.prompt)
-        messages = [
-            {"role": "system", "content": str(self.json_structure)},
-            {"role": "user", "content": document},
-        ]
-        content = await self.run(messages)
         return content
 
 
-class JSONCombiner(BaseAgentRunner):
-    def __init__(self, llm, actions, prompt, json_structure):
-        self.json_structure = json_structure
+class JSONCombiner(BaseLLM):
+    def __init__(self, llm, prompt, json_structure):
+        self.parser = (
+            JsonOutputParser(pydantic_object=ClaimForm)
+            if "parties" in json_structure
+            else JsonOutputParser(pydantic_object=EmployeeForm)
+        )
+        self.output_schema = (
+            ClaimForm.Config.json_schema_extra["example"]
+            if "parties" in json_structure
+            else EmployeeForm.Config.json_schema_extra["example"]
+        )
+        super().__init__(
+            llm, template=prompt, keys=["documents_descriptions_md"], parser=self.parser
+        )
+
+    async def combine(self, case_summary: str, documents_descriptions_md: str) -> dict:
+        content = await self.get_chat_response_regular(
+            dict(
+                case_summary=case_summary,
+                documents_descriptions_md=documents_descriptions_md,
+                output_schema=self.output_schema,
+            )
+        )
+        return content
+
+
+class Revisor(BaseLLM):
+    def __init__(self, llm, prompt):
         self.original_prompt = prompt
-        super().__init__(llm, actions=actions, prompt=prompt)
-
-    async def combine(self, case_summary: str, output_results: str) -> dict:
-        self.prompt = self.original_prompt.format(case_summary=case_summary)
-        self.agent = create_react_agent(self.llm, self.actions, prompt=self.prompt)
-
-        messages = [
-            {
-                "role": "system",
-                "content": f"Output Schema Format: {str(self.json_structure)}",
-            },
-            {"role": "user", "content": output_results},
-        ]
-        content = await self.run(messages)
-        content = clean_json_string(content)
-        return await JsonOutputParser().ainvoke(content)
-
-
-class Revisor(BaseAgentRunner):
-    def __init__(self, llm, actions, prompt):
-        self.original_prompt = prompt
-        super().__init__(llm, actions=actions, prompt=prompt)
+        super().__init__(
+            model=llm,
+            template=prompt,
+            keys=["document"],
+            parser=JsonOutputParser(pydantic_object=RevisorSchema),
+        )
 
     async def revise(self, document: str, missing_keys: str) -> str:
 
-        self.prompt = self.original_prompt.format(
-            case_document=document,
+        content = await self.get_chat_response_regular(
+            dict(
+                missing_keys=missing_keys,
+                document=document,
+                output_schema=RevisorSchema.Config.json_schema_extra["example"],
+            )
         )
-        self.agent = create_react_agent(self.llm, self.actions, prompt=self.prompt)
-        content = await self.run([{"role": "user", "content": str(missing_keys)}])
-        content = clean_json_string(content)
-        return await JsonOutputParser().ainvoke(content)
+        return content
 
 
 class ReConstructor(BaseAgentRunner):
