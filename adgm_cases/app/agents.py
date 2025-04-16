@@ -142,14 +142,41 @@ class Revisor(BaseLLM):
         return content
 
 
+class Summarizer(BaseLLM):
+    def __init__(self, llm, prompt):
+        self.original_prompt = prompt
+        super().__init__(
+            model=llm,
+            template=prompt,
+            keys=["conversation"],
+        )
+
+    async def summarize(self, case_summary: str, history: List[Dict]) -> str:
+
+        content = await self.get_chat_response_regular(
+            dict(
+                case_summary=case_summary,
+                conversation=history,
+            )
+        )
+        return content
+
+
 class ReConstructor(BaseAgentRunner):
     def __init__(self, llm, actions, prompt):
         self.original_prompt = prompt
         super().__init__(llm, actions=actions, prompt=prompt)
 
-    async def reconstruct(self, user_response: str, missing_keys: str) -> Dict:
+    async def reconstruct(
+        self, user_response: str, missing_keys: List, all_keys: List
+    ) -> Dict:
         try:
-            self.prompt = self.original_prompt.format(missing_keys=missing_keys)
+            self.prompt = self.original_prompt.format(
+                missing_keys=missing_keys, all_keys=all_keys
+            )
+            print("RECONSTRCUTOR PROMPT")
+            print(self.prompt)
+            print("RECONSTRCUTOR PROMPT")
             self.agent = create_react_agent(self.llm, self.actions, prompt=self.prompt)
             content = await self.run([{"role": "user", "content": user_response}])
             content = clean_json_string(content)

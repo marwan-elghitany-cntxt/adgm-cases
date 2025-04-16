@@ -345,4 +345,4 @@ class DocumentProcessor:
 
         revised_results = safely_fix_claim_value(revised_results, incorrect_claim)
 
-        return revised_results, conflict_points, incorrect_claim
+        return revised_results, conflict_points, incorrect_claim, case_summary

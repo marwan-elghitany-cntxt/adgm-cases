@@ -11,7 +11,7 @@ from loguru import logger
 import streamlit as st
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
-from agents import Officer, ReConstructor
+from agents import Officer, ReConstructor, Summarizer
 from constants import CLAIM_FORM, EMPLOYMENT_FORM, TEMP_DIR
 from document_processor import DocumentProcessor
 from image_transcriber import ImageTranscriber
@@ -19,11 +19,14 @@ from templates.prompt_templates import (
     LLM_PROMPT_CHECKER,
     LLM_PROMPT_OFFICER,
     LLM_PROMPT_RECONSTRUCTOR,
+    LLM_PROMPT_SUMMARIZER,
 )
 from utils.helpers import (
     aed_to_usd,
     find_missing_keys,
+    flatten_json2dots,
     inject_flattened_values,
+    is_claim_value_updated,
     json_to_markdown,
     txt2md_converter,
 )
@@ -45,6 +48,7 @@ reconstructor = ReConstructor(
 )
 officer = Officer(llm=llm, actions=[], prompt=LLM_PROMPT_OFFICER)
 checker = Officer(llm=llm, actions=[], prompt=LLM_PROMPT_CHECKER)
+summarizer = Summarizer(llm=llm, prompt=LLM_PROMPT_SUMMARIZER)
 
 # Streamlit setup
 st.title("ADGM E-Courts Claim Assistant")
@@ -61,24 +65,35 @@ st.session_state.setdefault("summary_json", {})
 st.session_state.setdefault("documents", [])
 st.session_state.setdefault("session_id", f"{TEMP_DIR}/{str(uuid.uuid4())}")
 st.session_state.setdefault("missing_keys", [])
+st.session_state.setdefault("all_keys", [])
+st.session_state.setdefault("case_summary", "")
 st.markdown(
     """
     <style>
-    .stButton > button {
-        background-color: #FF6347;  /* Change to your desired color */
+    .stButton:nth-child(1) button {
+        background-color: #FF6347;
         color: white;
+    }
+    .stButton:nth-child(2) button {
+        background-color: #4682B4;
+        color: white;
+    }
+    .stButton > button {
         border: none;
         border-radius: 5px;
         padding: 10px 20px;
         font-size: 16px;
         cursor: pointer;
     }
-    .stButton > button:hover {
-        background-color: #FF4500;  /* Hover color */
+    .stButton:nth-child(1) button:hover {
+        background-color: #FF4500;
+    }
+    .stButton:nth-child(2) button:hover {
+        background-color: #4169E1;
     }
     </style>
     """,
-    unsafe_allow_html=True,
+    unsafe_allow_html=True
 )
 
 
@@ -137,8 +152,8 @@ async def analyze_documents(files, claims_text: str):
 
     processor = DocumentProcessor(llm=llm, json_structure=JSON_SCHEMA)
 
-    results, conflict_pts, incorrect_claim = await processor.process_documents(
-        file_paths
+    results, conflict_pts, incorrect_claim, case_summary = (
+        await processor.process_documents(file_paths)
     )
     missing_keys = find_missing_keys(schema=JSON_SCHEMA, data=results)
     if incorrect_claim:
@@ -150,7 +165,7 @@ async def analyze_documents(files, claims_text: str):
     st.session_state.summary = json_to_markdown(results)
     st.session_state.summary_json = results
 
-    return results, missing_keys, conflict_pts
+    return results, missing_keys, conflict_pts, case_summary
 
 
 async def ask_llm(messages: List[Dict], is_checker=False):
@@ -158,6 +173,8 @@ async def ask_llm(messages: List[Dict], is_checker=False):
         return await checker.serve(messages)
     return await officer.serve(messages)
 
+async def update_summary(case_summary, history):
+    return await summarizer.summarize(case_summary, history)
 
 # Layout
 col1, col2 = st.columns([2, 1])
@@ -174,19 +191,22 @@ with col1:
 
     # 🔘 Submit Button to trigger processing
     submit = st.button("Submit for Analysis")
+    summary_update = st.button("Update Summary", type='tertiary')
+    
+    if summary_update:
+        if st.session_state.case_summary:
+            st.session_state.case_summary = asyncio.run(update_summary(st.session_state.case_summary, st.session_state.chat_history))
+        else:
+            st.warning("Please Submit a usecase first..")
 
     if submit:
-        logger.info("Submit Button Pressed !!")
-        # logger.info(f"{uploaded_files=}")
-        # logger.info(f"{particular_of_claims.strip()=}")
-        logger.info("Submit Button Pressed !! DONE")
-
         if uploaded_files and particular_of_claims.strip():
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-            results, missing_keys, conflict_pts = loop.run_until_complete(
+            results, missing_keys, conflict_pts, case_summary = loop.run_until_complete(
                 analyze_documents(uploaded_files, particular_of_claims)
             )
+            all_keys = flatten_json2dots(results)
 
             if missing_keys:
                 st.session_state.chat_history.extend(
@@ -208,6 +228,8 @@ with col1:
                     {"role": "ai", "content": llm_reply}
                 )
                 st.session_state["missing_keys"] = missing_keys
+                st.session_state["all_keys"] = all_keys
+                st.session_state.case_summary = case_summary
         else:
             st.warning("Please enter claim details and upload at least one PDF.")
 
@@ -227,6 +249,7 @@ with col1:
             chat_submitted = st.form_submit_button(label="➤")
             st.markdown("</div>", unsafe_allow_html=True)
 
+    # Chatting Input
     if user_input and chat_submitted:
         st.session_state.chat_history.append({"role": "user", "content": user_input})
         # All Keys are set
@@ -239,7 +262,11 @@ with col1:
             st.session_state.chat_history.append({"role": "ai", "content": llm_reply})
         else:
             filled_dict = asyncio.run(
-                reconstructor.reconstruct(user_input, st.session_state["missing_keys"])
+                reconstructor.reconstruct(
+                    user_response=user_input,
+                    missing_keys=st.session_state["missing_keys"],
+                    all_keys=st.session_state["all_keys"],
+                )
             )
             logger.info("RECONSTRUCTOR OUTPUT:")
             logger.info("=====")
@@ -249,12 +276,15 @@ with col1:
                 results = inject_flattened_values(
                     filled_dict, st.session_state.summary_json
                 )
-                # results = safely_fix_claim_value(results)
                 st.session_state.summary_json = results
                 st.session_state.summary = json_to_markdown(results)
 
                 missing_keys = find_missing_keys(schema=JSON_SCHEMA, data=results)
+                if not is_claim_value_updated(results):
+                    print("Claim Value still not updated")
+                    missing_keys.insert(0, "claim_details.claim_value")
                 st.session_state["missing_keys"] = missing_keys
+                st.session_state["all_keys"] = flatten_json2dots(results)
                 # Still exist Missing Keys after the user input, add to history and generate reply
                 if missing_keys:
                     st.session_state.chat_history.append(
@@ -287,6 +317,10 @@ with col1:
 
     if st.session_state.chat_history:
         st.write(st.session_state.chat_history[-1]["content"])
+        if st.session_state.case_summary:
+            st.markdown("### Case Summary:")
+            st.write(st.session_state.case_summary)
+
 
 with col2:
     st.subheader("📑 Extracted Document Information")

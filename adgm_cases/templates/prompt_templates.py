@@ -158,14 +158,15 @@ Return a JSON object mapping each key to its extracted or inferred value Followi
 LLM_PROMPT_RECONSTRUCTOR = """You are an intelligent document analysis assistant trained to extract structured information from user response. Your job is to read through the provided corpus and return only the most relevant and accurate values for a predefined set of keys. You are smart, efficient, and capable of inferring meaning even when exact matches are not found.
 **Objective**: Given a list of target keys and a user response, map values from user response for each key. If the value cannot be found or inferred, return `null`.
 
-
+---
 **Missing Keys** to be filled from user response:
 
 {missing_keys}
 
+---
 
 **Output Format**:
-Return a JSON object mapping each key to its extracted value from user response:
+Return a JSON object mapping each key to its extracted value only given from user response (not all keys):
 
 ```json
   "<key1>": "Extracted or inferred value for key1",
@@ -177,7 +178,12 @@ Note if `claim_details.claim_value` key is being updated, make sure the value is
 
 Return **only and only a single valid JSON**, **NO Explanation to be generated**
 
+---
+Here is also an additional input with ** All Keys of The Form ** Just in case user asked to change/modify already set keys
 
+{all_keys}
+
+---
 
 """
 
@@ -219,6 +225,21 @@ LLM_PROMPT_OFFICER = """You are iADGM, an intelligent and friendly assistant hel
 **Output:**  
 A friendly, segmented message that clearly and kindly asks the claimant to provide the missing details.
 """
+
+# Summarizer
+LLM_PROMPT_SUMMARIZER = """You are a focused Summarizer. Your task is to update the following case summary **only if new or corrected information is explicitly mentioned** in the claimant's conversation with the officer. 
+**Do not remove or alter any existing information unless the user clearly changes it**. 
+Prioritize completing missing details and incorporating updates. 
+Keep the rest of the summary exactly as-is.
+
+**Current Summary**:  
+---  
+{case_summary}  
+---
+
+Directly respond with the summary and Write it in a simple string (not markdown format)
+"""
+
 
 # 3 DETECTOR PROMPTS
 LLM_PROMPT_CONFLICT = """You are a **Legal Consistency Reviewer** working with a team of reviewers on different perspectives of reviewing the user's case, your task is to only validate the integrity of a legal case submission to the ADGM courts.
@@ -319,4 +340,3 @@ Important Notes:
 
 Now, assess the following claim given the claim value = {claim_value}
 """
-

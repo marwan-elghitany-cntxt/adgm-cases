@@ -175,6 +175,17 @@ def safely_fix_claim_value(results: dict, incorrect_claim=False) -> dict:
         logger.info(f"[ERROR while fixing claim value] {e}")
     return results
 
+def is_claim_value_updated(results: dict) -> dict:
+    """
+    Applies `fix_claim_value` to the claim value if it's found and valid.
+    Returns updated results, or original if claim_value is missing or an error occurs.
+    """
+    claim_value = fetch_claim_value(results)
+    if "❌" in claim_value:
+        return False
+    return True
+            
+
 
 def convert_to_markdown(case_dicts, include_json=True):
     """
@@ -286,6 +297,22 @@ def find_all_leaf_paths(schema_part, prefix=""):
 
     return missing
 
+def flatten_json2dots(nested_json, parent_key=""):
+    """
+    Flatten a nested JSON object into dot notation keys with their corresponding values.
+    """
+    items = []
+    if isinstance(nested_json, dict):
+        for k, v in nested_json.items():
+            new_key = f"{parent_key}.{k}" if parent_key else k
+            items.extend(flatten_json2dots(v, new_key).items())
+    elif isinstance(nested_json, list):
+        for idx, item in enumerate(nested_json):
+            new_key = f"{parent_key}.{idx}"
+            items.extend(flatten_json2dots(item, new_key).items())
+    else:
+        items.append((parent_key, nested_json))
+    return dict(items)
 
 def inject_flattened_values(dotted_data: dict, generated_data: dict) -> dict:
     """
