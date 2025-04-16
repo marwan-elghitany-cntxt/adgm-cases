@@ -59,8 +59,12 @@ async def read_pdf_text(file_path: str):
         str: The text extracted from the PDF file.
     """
     try:
-        content = pymupdf4llm.to_markdown(file_path)
-        return cleaning_md_4llm(content)
+        if file_path.lower().endswith(".txt"):
+            content = read_txt_file(file_path)
+        else:
+            content = pymupdf4llm.to_markdown(file_path)
+            content =  cleaning_md_4llm(content)
+        return content
     except FileNotFoundError:
         logger.info(f"Error: The file at {file_path} was not found.")
     except Exception as e:
