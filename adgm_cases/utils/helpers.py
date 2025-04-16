@@ -63,7 +63,7 @@ async def read_pdf_text(file_path: str):
             content = read_txt_file(file_path)
         else:
             content = pymupdf4llm.to_markdown(file_path)
-            content =  cleaning_md_4llm(content)
+            content = cleaning_md_4llm(content)
         return content
     except FileNotFoundError:
         logger.info(f"Error: The file at {file_path} was not found.")
@@ -175,6 +175,7 @@ def safely_fix_claim_value(results: dict, incorrect_claim=False) -> dict:
         logger.info(f"[ERROR while fixing claim value] {e}")
     return results
 
+
 def is_claim_value_updated(results: dict) -> dict:
     """
     Applies `fix_claim_value` to the claim value if it's found and valid.
@@ -184,7 +185,26 @@ def is_claim_value_updated(results: dict) -> dict:
     if "❌" in claim_value:
         return False
     return True
-            
+
+
+def clean_for_cache(text: str) -> str:
+    """
+    Cleans the input string by removing whitespace and special characters,
+    and returns a single lowercase word suitable for caching keys.
+
+    Args:
+        text (str): The input string.
+
+    Returns:
+        str: Cleaned and concatenated string.
+    """
+    if not isinstance(text, str):
+        return ""
+
+    # Remove all non-alphanumeric characters
+    cleaned = re.sub(r"[^A-Za-z0-9]", "", text)
+    # Convert to lowercase for uniformity
+    return cleaned.lower()
 
 
 def convert_to_markdown(case_dicts, include_json=True):
@@ -297,6 +317,7 @@ def find_all_leaf_paths(schema_part, prefix=""):
 
     return missing
 
+
 def flatten_json2dots(nested_json, parent_key=""):
     """
     Flatten a nested JSON object into dot notation keys with their corresponding values.
@@ -313,6 +334,7 @@ def flatten_json2dots(nested_json, parent_key=""):
     else:
         items.append((parent_key, nested_json))
     return dict(items)
+
 
 def inject_flattened_values(dotted_data: dict, generated_data: dict) -> dict:
     """
@@ -607,7 +629,9 @@ def txt2md_converter(text: str) -> str:
 
         except Exception as e:
             # In case any error occurs, log it and continue
-            logger.info(f"[ERROR: Could not process line: {original_line}]: \n\n {e} \n")
+            logger.info(
+                f"[ERROR: Could not process line: {original_line}]: \n\n {e} \n"
+            )
             return text
 
     return "\n".join(markdown_lines)

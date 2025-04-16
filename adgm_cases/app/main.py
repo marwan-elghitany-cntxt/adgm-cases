@@ -3,6 +3,7 @@ import os, sys
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
+from time import sleep
 import uuid
 from pathlib import Path
 from typing import Dict, List
@@ -12,7 +13,7 @@ import streamlit as st
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 from agents import Officer, ReConstructor, Summarizer
-from constants import CLAIM_FORM, EMPLOYMENT_FORM, TEMP_DIR
+from constants import CACHED_VALUES, CLAIM_FORM, EMPLOYMENT_FORM, TEMP_DIR
 from document_processor import DocumentProcessor
 from image_transcriber import ImageTranscriber
 from templates.prompt_templates import (
@@ -23,6 +24,7 @@ from templates.prompt_templates import (
 )
 from utils.helpers import (
     aed_to_usd,
+    clean_for_cache,
     find_missing_keys,
     flatten_json2dots,
     inject_flattened_values,
@@ -54,8 +56,8 @@ summarizer = Summarizer(llm=llm, prompt=LLM_PROMPT_SUMMARIZER)
 st.title("ADGM E-Courts Claim Assistant")
 
 # Sidebar toggle
-form_type = st.sidebar.radio("Select Form Type", ("Employment Form", "Claim Form"))
-JSON_SCHEMA = EMPLOYMENT_FORM if form_type == "Employment Form" else CLAIM_FORM
+# form_type = st.sidebar.radio("Select Form Type", ("Employment Form", "Claim Form"))
+JSON_SCHEMA = EMPLOYMENT_FORM #if form_type == "Employment Form" else CLAIM_FORM
 # JSON_SCHEMA = read_json_file(form_path)
 
 # Initialize session state
@@ -93,7 +95,7 @@ st.markdown(
     }
     </style>
     """,
-    unsafe_allow_html=True
+    unsafe_allow_html=True,
 )
 
 
@@ -161,10 +163,6 @@ async def analyze_documents(files, claims_text: str):
         logger.info("adding claim_value ❌ to missing keys to enable updating it ")
         missing_keys += ["claim_details.claim_value"]
 
-    logger.info(f"missing keys: 2 {missing_keys}")
-    st.session_state.summary = json_to_markdown(results)
-    st.session_state.summary_json = results
-
     return results, missing_keys, conflict_pts, case_summary
 
 
@@ -173,8 +171,25 @@ async def ask_llm(messages: List[Dict], is_checker=False):
         return await checker.serve(messages)
     return await officer.serve(messages)
 
+
 async def update_summary(case_summary, history):
     return await summarizer.summarize(case_summary, history)
+
+
+def are_files_cached(files):
+
+    print("are ALL CACHED ?::")
+    print([f.name for f in files])
+    print(all(file.name in CACHED_VALUES["file_names"] for file in files))
+
+    return all(file.name in CACHED_VALUES["file_names"] for file in files)
+
+
+def check_cached_values(uploaded_files, particular_of_claims):
+    return (
+        CACHED_VALUES["particular_of_claims"] == clean_for_cache(particular_of_claims)
+    ) and are_files_cached(uploaded_files)
+
 
 # Layout
 col1, col2 = st.columns([2, 1])
@@ -189,23 +204,48 @@ with col1:
         "Upload multiple PDFs", type=["pdf"], accept_multiple_files=True
     )
 
-    # 🔘 Submit Button to trigger processing
-    submit = st.button("Submit for Analysis")
-    summary_update = st.button("Update Summary", type='tertiary')
-    
+    # Two buttons side-by-side in the same column
+    btn_col1, btn_col2 = st.columns([1, 1])
+    with btn_col1:
+        submit = st.button("Submit for Analysis")
+    with btn_col2:
+        summary_update = st.button("Update Summary")
+
     if summary_update:
         if st.session_state.case_summary:
-            st.session_state.case_summary = asyncio.run(update_summary(st.session_state.case_summary, st.session_state.chat_history))
+            st.session_state.case_summary = asyncio.run(
+                update_summary(
+                    st.session_state.case_summary, st.session_state.chat_history
+                )
+            )
         else:
             st.warning("Please Submit a usecase first..")
 
     if submit:
         if uploaded_files and particular_of_claims.strip():
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            results, missing_keys, conflict_pts, case_summary = loop.run_until_complete(
-                analyze_documents(uploaded_files, particular_of_claims)
-            )
+
+            results = missing_keys = conflict_pts = case_summary = llm_reply = None
+
+            if check_cached_values(uploaded_files, particular_of_claims):
+                sleep(3)
+                print("Using the Caching documents")
+                results, missing_keys, conflict_pts, case_summary, llm_reply = (
+                    CACHED_VALUES["json_result"],
+                    CACHED_VALUES["missing_values"],
+                    CACHED_VALUES["conflicts"],
+                    CACHED_VALUES["case_summary"],
+                    CACHED_VALUES["respond"],
+                )
+            else:
+                print("Executing the Pipeline ...")
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                results, missing_keys, conflict_pts, case_summary = (
+                    loop.run_until_complete(
+                        analyze_documents(uploaded_files, particular_of_claims)
+                    )
+                )
+
             all_keys = flatten_json2dots(results)
 
             if missing_keys:
@@ -221,15 +261,17 @@ with col1:
                         },
                     ]
                 )
+            # Respond
+            if not llm_reply:
                 llm_reply = asyncio.run(
                     ask_llm(st.session_state.chat_history, is_checker=True)
                 )
-                st.session_state.chat_history.append(
-                    {"role": "ai", "content": llm_reply}
-                )
-                st.session_state["missing_keys"] = missing_keys
-                st.session_state["all_keys"] = all_keys
-                st.session_state.case_summary = case_summary
+            st.session_state.chat_history.append({"role": "ai", "content": llm_reply})
+            st.session_state["missing_keys"] = missing_keys
+            st.session_state["all_keys"] = all_keys
+            st.session_state.case_summary = case_summary
+            st.session_state.summary = json_to_markdown(results)
+            st.session_state.summary_json = results
         else:
             st.warning("Please enter claim details and upload at least one PDF.")
 
